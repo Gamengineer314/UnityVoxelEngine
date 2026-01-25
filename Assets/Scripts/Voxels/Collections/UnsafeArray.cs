@@ -9,7 +9,7 @@ namespace Voxels.Collections {
     /// <summary>
     /// Array of elements, similar to NativeArray, but without jobs checks
     /// </summary>
-    /// <typeparam name="T">Type of elements to store in the array</typeparam>
+    /// <typeparam name="T">Type of the elements in the array</typeparam>
     public readonly unsafe struct UnsafeArray<T> : IEnumerable<T>, IDisposable where T : unmanaged {
         public readonly int length;
         [NativeDisableUnsafePtrRestriction] public readonly void* ptr;

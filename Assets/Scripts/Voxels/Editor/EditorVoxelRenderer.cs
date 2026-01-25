@@ -8,7 +8,7 @@ namespace Voxels.Editor {
 
     [InitializeOnLoad]
     internal class EditorVoxelRenderer : EditorWindow {
-        private static Dictionary<VoxelTerrain, GraphicsBuffer> commandsBuffers = new();
+        private static readonly Dictionary<VoxelTerrain, GraphicsBuffer> commandsBuffers = new();
 
         static EditorVoxelRenderer() {
             SceneView.duringSceneGui -= EditorRender;
@@ -61,7 +61,7 @@ namespace Voxels.Editor {
                     count = VoxelTerrainRenderer.PrepareDraw(terrain, renderer.target, terrain.facesBuffer, commandsBuffer);
                 }
 
-                renderParams.worldBounds = terrain.bounds;
+                renderParams.worldBounds = new(Vector3.zero, new Vector3(float.MaxValue, float.MaxValue, float.MaxValue));
                 Graphics.RenderPrimitivesIndexedIndirect(renderParams, MeshTopology.Triangles, voxels.indicesBuffer, commandsBuffer, count);
             }
         }

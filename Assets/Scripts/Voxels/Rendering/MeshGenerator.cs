@@ -466,7 +466,7 @@ namespace Voxels.Rendering {
                         ulong deleteMask = ~checkMask;
 
                         int height = 1;
-                        while (y + height <= currentChunkSize[VoxelNormals.Axis(normal)]) { // Expand in y
+                        while (y + height < currentChunkSize[VoxelNormals.HeightAxis(normal)]) { // Expand in y
                             ref ulong nextRow = ref planes[startIndex + y + height];
                             if ((nextRow & checkMask) != checkMask) break;
                             nextRow &= deleteMask;
@@ -588,7 +588,7 @@ namespace Voxels.Rendering {
         }
 
 
-        public override unsafe void Generate(VoxelColumns<char> voxels) {
+        public override void Generate(VoxelColumns<char> voxels) {
             if (voxels.sizeX > VoxelTerrainFace.maxCoord || voxels.sizeZ > VoxelTerrainFace.maxCoord)
                 throw new ArgumentException($"Size {voxels.sizeX}x{voxels.sizeZ} is too large for a terrain");
             base.Generate(voxels);
@@ -598,7 +598,7 @@ namespace Voxels.Rendering {
 
 
         [BurstCompile]
-        private unsafe struct ProcessJob : IJob { // Process abstract generator results
+        private struct ProcessJob : IJob { // Process abstract generator results
             [ReadOnly] private readonly VoxelColumns<char> voxels;
             [ReadOnly] private readonly UnsafeArray<GeneratorJob> jobs;
             public NativeList<VoxelTerrainFace> faces;
@@ -681,7 +681,7 @@ namespace Voxels.Rendering {
         }
 
 
-        public override unsafe void Generate(VoxelColumns<Color32> voxels) {
+        public override void Generate(VoxelColumns<Color32> voxels) {
             if (voxels.sizeX > VoxelObjectFace.maxCoord || voxels.sizeZ > VoxelObjectFace.maxCoord)
                 throw new ArgumentException($"Size {voxels.sizeX}x{voxels.sizeZ} is too large for a terrain");
             base.Generate(voxels);
@@ -691,7 +691,7 @@ namespace Voxels.Rendering {
 
 
         [BurstCompile]
-        private unsafe struct ProcessJob : IJob { // Process abstract generator results
+        private struct ProcessJob : IJob { // Process abstract generator results
             [ReadOnly] private readonly VoxelColumns<Color32> voxels;
             [ReadOnly] private readonly UnsafeArray<GeneratorJob> jobs;
             public NativeList<VoxelObjectFace> faces;

@@ -1,5 +1,4 @@
 using System;
-using Unity.Collections;
 using UnityEngine;
 using Voxels.Collections;
 
@@ -9,8 +8,6 @@ namespace Voxels.Rendering {
         [SerializeField] private TextAsset voxelsAsset;
         public int maxHorizontalSize = 64;
         public int mergeNormalsThreshold = 256;
-
-        [NonSerialized] public Bounds bounds;
         [NonSerialized] public VoxelColumns<char> voxels;
 
         internal GraphicsBuffer facesBuffer { get; private set; }
@@ -22,9 +19,9 @@ namespace Voxels.Rendering {
         internal bool Created => facesBuffer != null;
 
 
-        private unsafe void Awake() {
+        private void Awake() {
             generator = new(maxHorizontalSize, mergeNormalsThreshold, 1024);
-            if (voxelsAsset != null) VoxelUtils.AsVoxels(voxelsAsset, out bounds, out voxels);
+            if (voxelsAsset != null) voxels = new(voxelsAsset);
         }
 
         private void OnDestroy() {

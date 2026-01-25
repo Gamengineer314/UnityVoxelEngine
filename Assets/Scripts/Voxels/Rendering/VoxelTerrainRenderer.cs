@@ -24,7 +24,7 @@ namespace Voxels.Rendering {
             rendering = true;
             renderParams = new(VoxelData.Instance.terrainMaterial) {
                 camera = target,
-                worldBounds = terrain.bounds
+                worldBounds = new(Vector3.zero, new Vector3(float.MaxValue, float.MaxValue, float.MaxValue))
             };
             commandsBuffer = CreateCommands(terrain.meshCount);
         }

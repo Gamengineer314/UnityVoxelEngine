@@ -3,6 +3,7 @@ using System.IO;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Mathematics;
+using UnityEngine;
 
 namespace Voxels.Collections {
 
@@ -12,17 +13,42 @@ namespace Voxels.Collections {
     /// </summary>
     /// <typeparam name="T">Voxel data type</typeparam>
     [BurstCompile]
-    public readonly struct VoxelColumns<T> where T : unmanaged {
+    public readonly unsafe struct VoxelColumns<T> where T : unmanaged {
         public readonly int sizeX, sizeZ; // Size in the x and z dimensions
         internal readonly NativeArray<Voxel<T>> voxels; // All columns
         internal readonly NativeArray<int> startIndices; // [sizeX * sizeZ + 1] sized array giving the start index of each column
 
-        public VoxelColumns(int sizeX, int sizeZ, NativeArray<Voxel<T>> voxels, NativeArray<int> startIndices) {
-            this.sizeX = sizeX;
-            this.sizeZ = sizeZ;
-            this.voxels = voxels;
-            this.startIndices = startIndices;
+
+        /// <summary>
+        /// Get voxel columns from an asset
+        /// </summary>
+        /// <param name="asset">Asset containing the voxels</param>
+        public VoxelColumns(TextAsset asset) {
+            byte[] bytes = asset.bytes;
+            int offset = 0;
+            sizeX = BitConverter.ToInt32(bytes, offset);
+            sizeZ = BitConverter.ToInt32(bytes, offset + sizeof(int));
+            int nVoxels = BitConverter.ToInt32(bytes, offset + 2 * sizeof(int));
+            offset += 3 * sizeof(int);
+            voxels = asset.GetData<byte>()
+                .GetSubArray(offset, nVoxels * sizeof(Voxel<T>))
+                .Reinterpret<Voxel<T>>(1);
+            offset += nVoxels * sizeof(Voxel<T>);
+            startIndices = asset.GetData<byte>()
+                .GetSubArray(offset, (sizeX * sizeZ + 1) * sizeof(int))
+                .Reinterpret<int>(1);
         }
+
+        /// <summary>
+        /// Create voxel columns from a height map
+        /// </summary>
+        /// <param name="map">Highest voxel in each column</param>
+        public VoxelColumns(Native2DArray<Voxel<T>> map) {
+            sizeX = map.sizeX;
+            sizeZ = map.sizeY;
+            FromHeightMap(in map, out voxels, out startIndices);
+        }
+
 
         public void Dispose() {
             voxels.Dispose();
@@ -93,41 +119,46 @@ namespace Voxels.Collections {
 
 
         /// <summary>
-        /// Create an array of voxels from a height map
+        /// Write voxel columns to a file
         /// </summary>
-        /// <param name="voxels">Highest voxel in each column</param>
-        /// <returns>The voxels</returns>
-        public static VoxelColumns<T> FromHeightMap(Native2DArray<Voxel<T>> voxels) {
-            FromHeightMap(in voxels, out VoxelColumns<T> result);
-            return result;
+        /// <param name="filePath">Path to the file</param>
+        /// <param name="voxels">The voxels</param>
+        public void Write(string filePath) {
+            using FileStream file = File.OpenWrite(filePath);
+            file.Write(BitConverter.GetBytes(sizeX));
+            file.Write(BitConverter.GetBytes(sizeZ));
+            file.Write(BitConverter.GetBytes(voxels.Length));
+            file.Write(voxels.Reinterpret<byte>(sizeof(Voxel<T>)).ToArray());
+            file.Write(startIndices.Reinterpret<byte>(sizeof(int)).ToArray());
         }
 
-        [BurstCompile]
-        private static void FromHeightMap(in Native2DArray<Voxel<T>> voxels, out VoxelColumns<T> result) {
-            NativeList<Voxel<T>> allVoxels = new(Allocator.Persistent);
-            NativeArray<int> startIndices = new(voxels.sizeX * voxels.sizeY + 1, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
 
-            for (int z = 0; z < voxels.sizeY; z++) {
-                for (int x = 0; x < voxels.sizeX; x++) {
+        [BurstCompile]
+        private static void FromHeightMap(in Native2DArray<Voxel<T>> map, out NativeArray<Voxel<T>> voxels, out NativeArray<int> startIndices) {
+            NativeList<Voxel<T>> voxelsList = new(Allocator.Persistent);
+            startIndices = new(map.sizeX * map.sizeY + 1, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+
+            for (int z = 0; z < map.sizeY; z++) {
+                for (int x = 0; x < map.sizeX; x++) {
                     // Find lowest highest voxel in neighbor columns
-                    int maxY = voxels[x, z].y;
+                    int maxY = map[x, z].y;
                     int minNeighbor = maxY - 1;
-                    if (x > 0) minNeighbor = math.min(minNeighbor, voxels[x - 1, z].y);
-                    if (x < voxels.sizeX - 1) minNeighbor = math.min(minNeighbor, voxels[x + 1, z].y);
-                    if (z > 0) minNeighbor = math.min(minNeighbor, voxels[x, z - 1].y);
-                    if (z < voxels.sizeY - 1) minNeighbor = math.min(minNeighbor, voxels[x, z + 1].y);
+                    if (x > 0) minNeighbor = math.min(minNeighbor, map[x - 1, z].y);
+                    if (x < map.sizeX - 1) minNeighbor = math.min(minNeighbor, map[x + 1, z].y);
+                    if (z > 0) minNeighbor = math.min(minNeighbor, map[x, z - 1].y);
+                    if (z < map.sizeY - 1) minNeighbor = math.min(minNeighbor, map[x, z + 1].y);
 
                     // Add voxels
-                    startIndices[x + voxels.sizeX * z] = allVoxels.Length;
+                    startIndices[x + map.sizeX * z] = voxelsList.Length;
                     for (int y = minNeighbor + 1; y <= maxY; y++) {
-                        allVoxels.Add(new(y, voxels[x, z].data));
+                        voxelsList.Add(new(y, map[x, z].data));
                     }
                 }
             }
-            startIndices[voxels.sizeX * voxels.sizeY] = allVoxels.Length;
+            startIndices[map.sizeX * map.sizeY] = voxelsList.Length;
 
-            result = new(voxels.sizeX, voxels.sizeY, allVoxels.ToArray(Allocator.Persistent), startIndices);
-            allVoxels.Dispose();
+            voxels = voxelsList.ToArray(Allocator.Persistent);
+            voxelsList.Dispose();
         }
     }
 
