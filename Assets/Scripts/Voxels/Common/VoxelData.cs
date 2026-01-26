@@ -40,7 +40,7 @@ namespace Voxels {
         internal readonly int facesId = Shader.PropertyToID("faces");
 
         private void Awake() {
-            if (Instance == null) Init();
+            if (!Instance) Init();
         }
 
         private void OnDestroy() {

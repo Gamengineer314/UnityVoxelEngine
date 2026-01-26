@@ -11,29 +11,26 @@ namespace Voxels.Editor {
         private static readonly Dictionary<VoxelTerrain, GraphicsBuffer> commandsBuffers = new();
 
         static EditorVoxelRenderer() {
-            SceneView.duringSceneGui -= EditorRender;
             SceneView.duringSceneGui += EditorRender;
             AssemblyReloadEvents.beforeAssemblyReload += Dispose;
         }
 
         private static void Dispose() {
             foreach (GraphicsBuffer buffer in commandsBuffers.Values) buffer.Dispose();
+            VoxelTerrain[] terrains = FindObjectsOfType<VoxelTerrain>();
+            foreach (VoxelTerrain terrain in terrains) terrain.Dispose();
+            if (VoxelData.Instance) VoxelData.Instance.Dispose();
         }
 
 
         private static void EditorRender(SceneView view) {
-            // Get global data
-            if (VoxelData.Instance == null) {
-                if (Application.isEditor) {
-                    VoxelData voxels = FindObjectOfType<VoxelData>();
-                    if (voxels == null) return;
-                    voxels.Init();
-                    AssemblyReloadEvents.beforeAssemblyReload += voxels.Dispose;
-                }
-                else return;
+            // Init singletons
+            if (VoxelData.Instance == null && !Application.isPlaying) {
+                VoxelData voxels = FindObjectOfType<VoxelData>();
+                if (voxels == null) return;
+                voxels.Init();
             }
 
-            // Draw terrains
             Camera sceneCamera = SceneView.currentDrawingSceneView.camera;
             RenderTerrains(sceneCamera);
         }
@@ -46,18 +43,17 @@ namespace Voxels.Editor {
             VoxelTerrain[] terrains = FindObjectsOfType<VoxelTerrain>();
             foreach (VoxelTerrain terrain in terrains) {
                 if (!terrain.Created) continue;
-                if (!commandsBuffers.ContainsKey(terrain)) commandsBuffers[terrain] = VoxelTerrainRenderer.CreateCommands(terrain.meshCount);
+                if (!commandsBuffers.ContainsKey(terrain)) commandsBuffers[terrain] = VoxelTerrainRenderer.CreateCommands(terrain.MeshCount);
                 GraphicsBuffer commandsBuffer = commandsBuffers[terrain];
 
-                SceneRender renderMode = VoxelTerrainEditor.GetRenderMode(terrain);
-                if (renderMode == SceneRender.None) continue;
+                SceneRender render = SceneRender.Get(terrain);
+                if (render.mode == SceneRender.Mode.None) continue;
                 int count;
-                if (renderMode == SceneRender.All) {
+                if (render.mode == SceneRender.Mode.All) {
                     count = VoxelTerrainRenderer.PrepareDraw(terrain, sceneCamera, terrain.facesBuffer, commandsBuffer);
                 }
                 else {
-                    int renderId = VoxelTerrainEditor.GetRenderId(terrain);
-                    VoxelTerrainRenderer renderer = (VoxelTerrainRenderer)EditorUtility.InstanceIDToObject(renderId);
+                    VoxelTerrainRenderer renderer = (VoxelTerrainRenderer)render.renderer;
                     count = VoxelTerrainRenderer.PrepareDraw(terrain, renderer.target, terrain.facesBuffer, commandsBuffer);
                 }
 

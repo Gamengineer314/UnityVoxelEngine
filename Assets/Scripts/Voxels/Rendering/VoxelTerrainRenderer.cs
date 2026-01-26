@@ -26,7 +26,7 @@ namespace Voxels.Rendering {
                 camera = target,
                 worldBounds = new(Vector3.zero, new Vector3(float.MaxValue, float.MaxValue, float.MaxValue))
             };
-            commandsBuffer = CreateCommands(terrain.meshCount);
+            commandsBuffer = CreateCommands(terrain.MeshCount);
         }
 
 
@@ -68,7 +68,7 @@ namespace Voxels.Rendering {
             voxels.terrainCulling.SetBuffer(0, voxels.meshesId, terrain.meshesBuffer);
             voxels.terrainCulling.SetBuffer(0, voxels.commandsId, commandsBuffer);
             commandsBuffer.SetCounterValue(0);
-            voxels.terrainCulling.Dispatch(0, terrain.meshCount / VoxelData.terrainCullingGroupSize, 1, 1);
+            voxels.terrainCulling.Dispatch(0, terrain.MeshCount / VoxelData.terrainCullingGroupSize, 1, 1);
             GraphicsBuffer.CopyCount(commandsBuffer, voxels.counterBuffer, 0);
             uint[] data = new uint[1];
             voxels.counterBuffer.GetData(data);

@@ -31,7 +31,6 @@ public class FontMultiplier {
         defaultValues = DefaultSize.Deserialize(
             SessionState.GetString("FontMultiplier_DefaultValues", "{}")
         );
-        EditorApplication.hierarchyWindowItemOnGUI -= ModifyStartUp;
         EditorApplication.hierarchyWindowItemOnGUI += ModifyStartUp;
     }
 
