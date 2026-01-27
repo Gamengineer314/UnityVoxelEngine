@@ -14,7 +14,7 @@ namespace Voxels.Rendering {
         private void LateUpdate() {
             if (!rendering && terrain.Created) StartRender();
             if (rendering) {
-                int count = PrepareDraw(terrain, target, terrain.facesBuffer, commandsBuffer);
+                int count = PrepareDraw(terrain, target, commandsBuffer);
                 Graphics.RenderPrimitivesIndexedIndirect(renderParams, MeshTopology.Triangles, VoxelData.Instance.indicesBuffer, commandsBuffer, count);
             }
         }
@@ -51,9 +51,10 @@ namespace Voxels.Rendering {
         /// <param name="target">The target camera</param>
         /// <param name="commandsBuffer">The commands buffer to use</param>
         /// <returns>Number of commands to draw</returns>
-        internal static int PrepareDraw(VoxelTerrain terrain, Camera target, GraphicsBuffer facesBuffer, GraphicsBuffer commandsBuffer) {
+        internal static int PrepareDraw(VoxelTerrain terrain, Camera target, GraphicsBuffer commandsBuffer) {
             VoxelData voxels = VoxelData.Instance;
-            voxels.terrainMaterial.SetBuffer(voxels.facesId, facesBuffer);
+            voxels.terrainMaterial.SetBuffer(voxels.facesId, terrain.facesBuffer);
+            voxels.terrainMaterial.SetBuffer(voxels.colorsId, terrain.colorsBuffer);
 
             // Set camera data
             voxels.terrainCulling.SetVector(voxels.cameraPositionId, target.transform.position);

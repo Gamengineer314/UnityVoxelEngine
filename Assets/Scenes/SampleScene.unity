@@ -449,7 +449,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   terrainGenerator: {fileID: 1587352367}
   terrainRenderer: {fileID: 963194230}
-  terrain: {fileID: 0}
+  terrain: {fileID: 1587352371}
 --- !u!4 &1587352369
 Transform:
   m_ObjectHideFlags: 0
@@ -492,7 +492,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ffac9c22e2eea655cb6e91291cc6e080, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  voxelsAsset: {fileID: 4900000, guid: cb1033d1d1a4b47a9ac52ee77ce87144, type: 3}
+  voxelsAsset: {fileID: 0}
   maxHorizontalSize: 64
   mergeNormalsThreshold: 256
 --- !u!1 &1811439572

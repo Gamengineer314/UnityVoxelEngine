@@ -12,10 +12,11 @@ namespace Voxels.Rendering {
     /// <summary>
     /// Mesh generator from voxel collections
     /// </summary>
-    internal abstract class MeshGenerator<T, TMerger>
+    internal abstract class MeshGenerator<T, I, Merger>
         where T : unmanaged
-        where TMerger : unmanaged, IMerger<T> {
-        private readonly TMerger merger;
+        where I : unmanaged, IEquatable<I>
+        where Merger : unmanaged, IMerger<T, I> {
+        private readonly Merger merger;
         private readonly int maxHorizontalSize;
         private readonly int mergeNormalsThreshold;
         private readonly int jobHorizontalSize;
@@ -46,7 +47,7 @@ namespace Voxels.Rendering {
         /// This allows to remove faces below the objects and on their sides.
         /// </param>
         public MeshGenerator(
-            TMerger merger,
+            Merger merger,
             int maxHorizontalSize = 64,
             int mergeNormalsThreshold = 256,
             int jobHorizontalSize = int.MaxValue,
@@ -108,7 +109,7 @@ namespace Voxels.Rendering {
             [ReadOnly] private readonly VoxelColumns<T> voxels; // All voxels
             private readonly int startX, startZ; // Start of the part to generate
             private readonly int sizeX, sizeZ; // Size of the part to generate
-            private readonly TMerger merger; // Merge identifier
+            private readonly Merger merger; // Merge identifier
             private readonly int maxHorizontalSize;
             private readonly int mergeNormalsThreshold;
             private readonly bool seenFromAbove;
@@ -122,15 +123,14 @@ namespace Voxels.Rendering {
             private UnsafeArray<ulong> rows;
             private UnsafeArray<bool2> sides;
             private UnsafeArray<ulong> planes;
-            private UnsafeArray<int> idToIndex;
-            private UnsafeArray<int> indexToId;
-            private int idCount;
+            private UnsafeHashMap<I, int> idIndex;
+            private UnsafeList<I> ids;
             private fixed int currentHeads[6];
 
             public GeneratorJob(
                 VoxelColumns<T> voxels,
                 int startX, int startZ, int sizeX, int sizeZ,
-                TMerger merger,
+                Merger merger,
                 int maxHorizontalSize,
                 int mergeNormalsThreshold,
                 bool seenFromAbove
@@ -153,9 +153,8 @@ namespace Voxels.Rendering {
                 rows = default;
                 sides = default;
                 planes = default;
-                idToIndex = default;
-                indexToId = default;
-                idCount = 0;
+                idIndex = default;
+                ids = default;
             }
 
             public void Dispose() {
@@ -167,8 +166,8 @@ namespace Voxels.Rendering {
 
             public void Execute() {
                 // Find IDs and y ranges
-                idToIndex = new UnsafeArray<int>(256, Allocator.Temp, NativeArrayOptions.ClearMemory);
-                indexToId = new UnsafeArray<int>(256, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
+                idIndex = new UnsafeHashMap<I, int>(0, Allocator.Temp);
+                ids = new UnsafeList<I>(0, Allocator.Temp);
                 int chunksPerMesh = (int)math.ceil((float)maxHorizontalSize / chunkSize);
                 int nMeshesX = (int)math.ceil((float)sizeX / maxHorizontalSize);
                 int nMeshesZ = (int)math.ceil((float)sizeZ / maxHorizontalSize);
@@ -193,11 +192,10 @@ namespace Voxels.Rendering {
                                         min = math.min(min, voxels.GetMin(x, z));
                                         max = math.max(max, voxels.GetMax(x, z));
                                         foreach (Voxel<T> voxel in voxels.GetColumn(x, z)) {
-                                            char id = merger.MergeIdentifier(voxel.data);
-                                            if (idToIndex[id] == 0) {
-                                                idToIndex[id] = idCount;
-                                                indexToId[idCount] = id;
-                                                idCount++;
+                                            I id = merger.MergeIdentifier(voxel.data);
+                                            if (!idIndex.ContainsKey(id)) {
+                                                idIndex[id] = ids.Length;
+                                                ids.Add(id);
                                             }
                                         }
                                     }
@@ -211,7 +209,7 @@ namespace Voxels.Rendering {
                 // Generate all meshes
                 rows = new UnsafeArray<ulong>(chunkSize * chunkSize * 3, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
                 sides = new UnsafeArray<bool2>(chunkSize * chunkSize * 3, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
-                planes = new UnsafeArray<ulong>(chunkSize * chunkSize * idCount * 6, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
+                planes = new UnsafeArray<ulong>(chunkSize * chunkSize * ids.Length * 6, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
                 for (int meshZ = 0; meshZ < nMeshesZ; meshZ++) {
                     int meshStartZ = startZ + meshZ * maxHorizontalSize;
                     int meshEndZ = math.min(meshStartZ + maxHorizontalSize, startZ + sizeZ);
@@ -276,8 +274,8 @@ namespace Voxels.Rendering {
                 }
 
                 yRanges.Dispose();
-                idToIndex.Dispose();
-                indexToId.Dispose();
+                idIndex.Dispose();
+                ids.Dispose();
                 rows.Dispose();
                 sides.Dispose();
                 planes.Dispose();
@@ -375,8 +373,8 @@ namespace Voxels.Rendering {
                                 if (axis == 2 && next.z >= voxels.sizeZ) continue;
                                 if (next.y < voxels.GetMin(next.xz)) continue;
                             }
-                            char id = merger.MergeIdentifier(voxels.GetVoxel(posDepth));
-                            planes[y + depth * chunkSize + idToIndex[id] * chunkSize * chunkSize + 2 * axis * chunkSize * chunkSize * idCount] |= 1UL << x;
+                            I id = merger.MergeIdentifier(voxels.GetVoxel(posDepth));
+                            planes[y + depth * chunkSize + idIndex[id] * chunkSize * chunkSize + 2 * axis * chunkSize * chunkSize * ids.Length] |= 1UL << x;
                         }
 
                         // Find faces to render in negative direction and add them to planes
@@ -395,8 +393,8 @@ namespace Voxels.Rendering {
                                 if (axis == 2 && next.z < 0) continue;
                                 if (next.y < voxels.GetMin(next.xz)) continue;
                             }
-                            char id = merger.MergeIdentifier(voxels.GetVoxel(posDepth));
-                            planes[y + depth * chunkSize + idToIndex[id] * chunkSize * chunkSize + (2 * axis + 1) * chunkSize * chunkSize * idCount] |= 1UL << x;
+                            I id = merger.MergeIdentifier(voxels.GetVoxel(posDepth));
+                            planes[y + depth * chunkSize + idIndex[id] * chunkSize * chunkSize + (2 * axis + 1) * chunkSize * chunkSize * ids.Length] |= 1UL << x;
                         }
 
                         pos[VoxelNormals.WidthAxis(axis)]++;
@@ -423,7 +421,7 @@ namespace Voxels.Rendering {
                 int startFace = faces.Length;
                 int3 min = int.MaxValue;
                 int3 max = int.MinValue;
-                for (int i = 0; i < idCount; i++) {
+                for (int i = 0; i < ids.Length; i++) {
                     for (int depth = 0; depth < currentChunkSize[VoxelNormals.Axis(normal)]; depth++) {
                         GenerateOptimizedPlane(normal, depth, i, ref min, ref max);
                     }
@@ -452,7 +450,7 @@ namespace Voxels.Rendering {
 
             // Generate the mesh for a plane
             private void GenerateOptimizedPlane(VoxelNormal normal, int depth, int idIndex, ref int3 min, ref int3 max) {
-                int startIndex = (int)normal * chunkSize * chunkSize * idCount + idIndex * chunkSize * chunkSize + depth * chunkSize;
+                int startIndex = (int)normal * chunkSize * chunkSize * ids.Length + idIndex * chunkSize * chunkSize + depth * chunkSize;
                 int3 beforeX = currentChunkStart;
                 beforeX[VoxelNormals.Axis(normal)] += depth;
                 for (int y = 0; y < currentChunkSize[VoxelNormals.HeightAxis(normal)]; y++) {
@@ -540,29 +538,22 @@ namespace Voxels.Rendering {
     /// <summary>
     /// Struct that allows merging faces for a greedy mesher
     /// </summary>
-    /// <typeparam name="T"></typeparam>
-    internal interface IMerger<T> {
+    /// <typeparam name="T">Voxel data type</typeparam>
+    /// <typeparam name="I">Identifier type</typeparam>
+    internal interface IMerger<T, I> {
         /// <summary>
         /// Returns an identifier for a voxel.
         /// Faces with the same identifier can be merged.
-        /// The identifier can't be 0.
         /// </summary>
-        char MergeIdentifier(T voxel);
-    }
-
-    internal struct IdentityMerger : IMerger<char> {
-        public readonly char MergeIdentifier(char id) => id;
-    }
-
-    internal struct AllMerger<T> : IMerger<T> {
-        public readonly char MergeIdentifier(T id) => (char)1;
+        I MergeIdentifier(T voxel);
     }
 
 
 
-    internal class TerrainMeshGenerator : MeshGenerator<char, IdentityMerger> {
+    internal class TerrainMeshGenerator : MeshGenerator<Color32, Color32Eq, TerrainMeshGenerator.Merger> {
         public NativeList<VoxelTerrainFace> faces;
         public NativeList<VoxelMesh> meshes;
+        public NativeList<Color32> colors;
         public JobHandle handle;
 
         public TerrainMeshGenerator(
@@ -572,12 +563,14 @@ namespace Voxels.Rendering {
         ) : base(default, maxHorizontalSize, mergeNormalsThreshold, jobHorizontalSize, true) {
             faces = new(Allocator.Persistent);
             meshes = new(Allocator.Persistent);
+            colors = new(Allocator.Persistent);
         }
 
         public override void Dispose() {
             base.Dispose();
             faces.Dispose();
             meshes.Dispose();
+            colors.Dispose();
         }
 
         public void Clear() {
@@ -588,35 +581,44 @@ namespace Voxels.Rendering {
         }
 
 
-        public override void Generate(VoxelColumns<char> voxels) {
+        public override void Generate(VoxelColumns<Color32> voxels) {
             if (voxels.sizeX > VoxelTerrainFace.maxCoord || voxels.sizeZ > VoxelTerrainFace.maxCoord)
                 throw new ArgumentException($"Size {voxels.sizeX}x{voxels.sizeZ} is too large for a terrain");
             base.Generate(voxels);
-            ProcessJob job = new(voxels, new(jobs.Array), faces, meshes);
+            ProcessJob job = new(voxels, new(jobs.Array), faces, meshes, colors);
             handle = job.Schedule(JobHandle.CombineDependencies(handles.Array));
+        }
+
+
+        internal struct Merger : IMerger<Color32, Color32Eq> {
+            public readonly Color32Eq MergeIdentifier(Color32 id) => id;
         }
 
 
         [BurstCompile]
         private struct ProcessJob : IJob { // Process abstract generator results
-            [ReadOnly] private readonly VoxelColumns<char> voxels;
+            [ReadOnly] private readonly VoxelColumns<Color32> voxels;
             [ReadOnly] private readonly UnsafeArray<GeneratorJob> jobs;
             public NativeList<VoxelTerrainFace> faces;
             public NativeList<VoxelMesh> meshes;
+            public NativeList<Color32> colors;
 
             public ProcessJob(
-                VoxelColumns<char> voxels,
+                VoxelColumns<Color32> voxels,
                 UnsafeArray<GeneratorJob> jobs,
                 NativeList<VoxelTerrainFace> faces,
-                NativeList<VoxelMesh> meshes
+                NativeList<VoxelMesh> meshes,
+                NativeList<Color32> colors
             ) {
                 this.voxels = voxels;
                 this.jobs = jobs;
                 this.faces = faces;
                 this.meshes = meshes;
+                this.colors = colors;
             }
 
             public void Execute() {
+                NativeHashMap<Color32Eq, int> colorIndex = new(0, Allocator.Temp);
                 foreach (GeneratorJob job in jobs) {
                     foreach (LinkedMeshHead head in job.heads) {
                         int startFace = faces.Length;
@@ -628,7 +630,14 @@ namespace Voxels.Rendering {
                                 MeshFace face = job.faces[j];
                                 int3 pos = face.pos;
                                 if (VoxelNormals.Positive(face.Normal)) pos[VoxelNormals.Axis(face.Normal)]++;
-                                faces.Add(new((uint3)pos, face.Width, face.Height, face.Normal, voxels.GetVoxel(face.pos)));
+                                Color32 color = voxels.GetVoxel(face.pos);
+                                if (colorIndex.TryGetValue(color, out int index)) {
+                                    faces.Add(new((uint3)pos, face.Width, face.Height, face.Normal, (uint)index));
+                                }
+                                else {
+                                    colorIndex[color] = colors.Length;
+                                    colors.Add(color);
+                                }
                                 if (normal == VoxelNormal.None) normal = face.Normal;
                                 else if (normal != face.Normal) normal = VoxelNormal.Any;
                             }
@@ -644,7 +653,7 @@ namespace Voxels.Rendering {
 
 
 
-    internal class ObjectMeshGenerator : MeshGenerator<Color32, AllMerger<Color32>> {
+    internal class ObjectMeshGenerator : MeshGenerator<Color32, int, ObjectMeshGenerator.Merger> {
         public NativeList<VoxelObjectFace> faces;
         public NativeList<VoxelMesh> meshes;
         public NativeList<Color32> texture;
@@ -665,6 +674,7 @@ namespace Voxels.Rendering {
             base.Dispose();
             faces.Dispose();
             meshes.Dispose();
+            texture.Dispose();
         }
 
         public void Clear(bool keepOffsets = false) {
@@ -687,6 +697,11 @@ namespace Voxels.Rendering {
             base.Generate(voxels);
             ProcessJob job = new(voxels, new(jobs.Array), faces, meshes, texture, faceOffset, textureOffset);
             handle = job.Schedule(JobHandle.CombineDependencies(handles.Array));
+        }
+
+
+        internal struct Merger : IMerger<Color32, int> {
+            public readonly int MergeIdentifier(Color32 id) => 0;
         }
 
 
@@ -749,6 +764,29 @@ namespace Voxels.Rendering {
                 }
             }
         }
+    }
+
+
+
+    // Color that implements IEquatable for hash maps
+    readonly struct Color32Eq : IEquatable<Color32Eq> {
+        public readonly byte r, g, b, a;
+
+        public Color32Eq(byte r, byte g, byte b, byte a) {
+            this.r = r;
+            this.g = g;
+            this.b = b;
+            this.a = a;
+        }
+
+        readonly bool IEquatable<Color32Eq>.Equals(Color32Eq o) =>
+            r == o.r && g == o.g && b == o.b && a == o.a;
+
+        public override int GetHashCode() =>
+            r | (g << 8) | (b << 16) | (a << 24);
+
+        public static implicit operator Color32(Color32Eq c) => new(c.r, c.g, c.b, c.a);
+        public static implicit operator Color32Eq(Color32 c) => new(c.r, c.g, c.b, c.a);
     }
 
 }

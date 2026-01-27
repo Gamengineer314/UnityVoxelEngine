@@ -50,11 +50,11 @@ namespace Voxels.Editor {
                 if (render.mode == SceneRender.Mode.None) continue;
                 int count;
                 if (render.mode == SceneRender.Mode.All) {
-                    count = VoxelTerrainRenderer.PrepareDraw(terrain, sceneCamera, terrain.facesBuffer, commandsBuffer);
+                    count = VoxelTerrainRenderer.PrepareDraw(terrain, sceneCamera, commandsBuffer);
                 }
                 else {
                     VoxelTerrainRenderer renderer = (VoxelTerrainRenderer)render.renderer;
-                    count = VoxelTerrainRenderer.PrepareDraw(terrain, renderer.target, terrain.facesBuffer, commandsBuffer);
+                    count = VoxelTerrainRenderer.PrepareDraw(terrain, renderer.target, commandsBuffer);
                 }
 
                 renderParams.worldBounds = new(Vector3.zero, new Vector3(float.MaxValue, float.MaxValue, float.MaxValue));

@@ -8,7 +8,6 @@ Shader "Unlit/VoxelShader" {
             #include "UnityCG.cginc"
             #define UNITY_INDIRECT_DRAW_ARGS IndirectDrawIndexedArgs
             #include "UnityIndirect.cginc"
-            #include "ShaderParams.cginc"
 
 
             struct v2f {
@@ -39,6 +38,7 @@ Shader "Unlit/VoxelShader" {
             };
 
             StructuredBuffer<Face> faces;
+            StructuredBuffer<uint> colors;
 
             uniform float quadsInterleaving; // Remove 1 pixel gaps between triangles
 
@@ -74,11 +74,19 @@ Shader "Unlit/VoxelShader" {
                 float normal[3] = { 0, 0, 0 };
                 normal[normalAxis] = -2 * float(normalID & 1u) + 1;
 
+                // Unpack color
+                uint color32 = colors[faceData2 >> 24];
+                fixed4 color;
+                color.r = (color32 & 0xFF) / 255.0;
+                color.g = ((color32 >> 8) & 0xFF) / 255.0;
+                color.b = ((color32 >> 16) & 0xFF) / 255.0;
+                color.a = ((color32 >> 24) & 0xFF) / 255.0;
+
                 // Output
                 v2f o;
                 o.vertex = mul(UNITY_MATRIX_VP, float4(pos[0], pos[1], pos[2], 1));
                 o.voxelData = float4(pos[0] - normal[0] * 0.5f, pos[1] - normal[1] * 0.5f, pos[2] - normal[2] * 0.5f, faceLightLevels[normalID]);
-                o.color = colors[faceData2 >> 24];
+                o.color = color;
                 return o;
             }
 
@@ -88,7 +96,7 @@ Shader "Unlit/VoxelShader" {
                 float lightLevel = i.voxelData.w;
                 fixed4 color = i.color;
                 color *= lightLevel / 15; // Light (depending on face directions, better lighting could be added)
-                color *= 1 + color.w * ((round(random(pos) * discretization) / discretization) - 0.5); // Random slight color variation
+                color *= 1 + color.w * ((round(random(pos) * 8) / 8) - 0.5); // Random slight color variation
                 color.w = 1;
                 return color;
             }

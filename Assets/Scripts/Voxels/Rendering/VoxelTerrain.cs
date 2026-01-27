@@ -9,10 +9,11 @@ namespace Voxels.Rendering {
         [SerializeField] private TextAsset voxelsAsset;
         public int maxHorizontalSize = 64;
         public int mergeNormalsThreshold = 256;
-        [NonSerialized] public VoxelColumns<char> voxels;
+        [NonSerialized] public VoxelColumns<Color32> voxels;
 
         internal GraphicsBuffer facesBuffer { get; private set; }
         internal GraphicsBuffer meshesBuffer { get; private set; }
+        internal GraphicsBuffer colorsBuffer { get; private set; }
 
         private TerrainMeshGenerator generator;
         private bool generating;
@@ -23,8 +24,7 @@ namespace Voxels.Rendering {
         private void Update() {
             if (!voxels.Created && voxelsAsset) voxels = new(voxelsAsset);
             if (voxels.Created && !generating && !Created) {
-                generator = new(maxHorizontalSize, mergeNormalsThreshold, 1024);
-                generator.Generate(voxels);
+                StartGenerate();
                 generating = true;
             }
             if (generating && generator.handle.IsCompleted) {
@@ -41,6 +41,7 @@ namespace Voxels.Rendering {
             if (Created) {
                 facesBuffer.Dispose();
                 meshesBuffer.Dispose();
+                colorsBuffer.Dispose();
             }
             else if (generating) {
                 generator.handle.Complete();
@@ -51,13 +52,18 @@ namespace Voxels.Rendering {
         }
 
 
+        private void StartGenerate() {
+            generator = new(maxHorizontalSize, mergeNormalsThreshold, 1024);
+            generator.Generate(voxels);
+        }
+
         /// <summary>
         /// Complete terrain generation now
         /// </summary>
         public void CompleteGenerate() {
             if (Created) throw new InvalidOperationException("Can't call CompleteGenerate : terrain already generated");
             if (!voxels.Created) throw new InvalidOperationException("Can't call CompleteGenerate : voxels not set");
-            if (!generating) generator.Generate(voxels);
+            if (!generating) StartGenerate();
             generator.handle.Complete();
             FinishGenerate();
         }
@@ -68,6 +74,8 @@ namespace Voxels.Rendering {
             facesBuffer.SetData(generator.faces.AsArray());
             meshesBuffer = new(GraphicsBuffer.Target.Structured, generator.meshes.Length, sizeof(VoxelMesh));
             meshesBuffer.SetData(generator.meshes.AsArray());
+            colorsBuffer = new(GraphicsBuffer.Target.Structured, generator.colors.Length, sizeof(Color32));
+            colorsBuffer.SetData(generator.colors.AsArray());
             generator.Dispose();
             generating = false;
         }
