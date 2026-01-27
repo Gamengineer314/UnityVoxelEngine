@@ -15,14 +15,14 @@ namespace Voxels.Rendering {
             if (!rendering && terrain.Created) StartRender();
             if (rendering) {
                 int count = PrepareDraw(terrain, target, commandsBuffer);
-                Graphics.RenderPrimitivesIndexedIndirect(renderParams, MeshTopology.Triangles, VoxelData.Instance.indicesBuffer, commandsBuffer, count);
+                Graphics.RenderPrimitivesIndexedIndirect(renderParams, MeshTopology.Triangles, VoxelRenderers.Instance.indicesBuffer, commandsBuffer, count);
             }
         }
 
 
         private void StartRender() {
             rendering = true;
-            renderParams = new(VoxelData.Instance.terrainMaterial) {
+            renderParams = new(VoxelRenderers.Instance.terrainMaterial) {
                 camera = target,
                 worldBounds = new(Vector3.zero, new Vector3(float.MaxValue, float.MaxValue, float.MaxValue))
             };
@@ -52,7 +52,7 @@ namespace Voxels.Rendering {
         /// <param name="commandsBuffer">The commands buffer to use</param>
         /// <returns>Number of commands to draw</returns>
         internal static int PrepareDraw(VoxelTerrain terrain, Camera target, GraphicsBuffer commandsBuffer) {
-            VoxelData voxels = VoxelData.Instance;
+            VoxelRenderers voxels = VoxelRenderers.Instance;
             voxels.terrainMaterial.SetBuffer(voxels.facesId, terrain.facesBuffer);
             voxels.terrainMaterial.SetBuffer(voxels.colorsId, terrain.colorsBuffer);
 
@@ -69,7 +69,7 @@ namespace Voxels.Rendering {
             voxels.terrainCulling.SetBuffer(0, voxels.meshesId, terrain.meshesBuffer);
             voxels.terrainCulling.SetBuffer(0, voxels.commandsId, commandsBuffer);
             commandsBuffer.SetCounterValue(0);
-            voxels.terrainCulling.Dispatch(0, terrain.MeshCount / VoxelData.terrainCullingGroupSize, 1, 1);
+            voxels.terrainCulling.Dispatch(0, terrain.MeshCount / VoxelRenderers.terrainCullingGroupSize, 1, 1);
             GraphicsBuffer.CopyCount(commandsBuffer, voxels.counterBuffer, 0);
             uint[] data = new uint[1];
             voxels.counterBuffer.GetData(data);

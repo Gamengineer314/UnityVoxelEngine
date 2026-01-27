@@ -1,16 +1,16 @@
 using UnityEngine;
 using Random = UnityEngine.Random;
 
-namespace Voxels {
+namespace Voxels.Rendering {
 
     /// <summary>
-    /// Voxels global data
+    /// Voxel renderers global data
     /// </summary>
-    public class VoxelData : MonoBehaviour {
+    public class VoxelRenderers : MonoBehaviour {
         internal const int terrainCullingGroupSize = 64;
         internal const int maxFaceCount = 16384;
 
-        internal static VoxelData Instance { get; private set; }
+        internal static VoxelRenderers Instance { get; private set; }
 
         [SerializeField] internal Material terrainMaterial;
         [SerializeField] internal ComputeShader terrainCulling;

@@ -69,7 +69,7 @@ namespace Voxels.Rendering {
         }
 
         private unsafe void FinishGenerate() {
-            while (generator.meshes.Length % VoxelData.terrainCullingGroupSize != 0) generator.meshes.Add(default);
+            while (generator.meshes.Length % VoxelRenderers.terrainCullingGroupSize != 0) generator.meshes.Add(default);
             facesBuffer = new(GraphicsBuffer.Target.Structured, generator.faces.Length, sizeof(VoxelTerrainFace));
             facesBuffer.SetData(generator.faces.AsArray());
             meshesBuffer = new(GraphicsBuffer.Target.Structured, generator.meshes.Length, sizeof(VoxelMesh));

@@ -19,14 +19,14 @@ namespace Voxels.Editor {
             foreach (GraphicsBuffer buffer in commandsBuffers.Values) buffer.Dispose();
             VoxelTerrain[] terrains = FindObjectsOfType<VoxelTerrain>();
             foreach (VoxelTerrain terrain in terrains) terrain.Dispose();
-            if (VoxelData.Instance) VoxelData.Instance.Dispose();
+            if (VoxelRenderers.Instance) VoxelRenderers.Instance.Dispose();
         }
 
 
         private static void EditorRender(SceneView view) {
             // Init singletons
-            if (VoxelData.Instance == null && !Application.isPlaying) {
-                VoxelData voxels = FindObjectOfType<VoxelData>();
+            if (VoxelRenderers.Instance == null && !Application.isPlaying) {
+                VoxelRenderers voxels = FindObjectOfType<VoxelRenderers>();
                 if (voxels == null) return;
                 voxels.Init();
             }
@@ -37,7 +37,7 @@ namespace Voxels.Editor {
 
 
         private static void RenderTerrains(Camera sceneCamera) {
-            VoxelData voxels = VoxelData.Instance;
+            VoxelRenderers voxels = VoxelRenderers.Instance;
             RenderParams renderParams = new(voxels.terrainMaterial) { camera = sceneCamera };
 
             VoxelTerrain[] terrains = FindObjectsOfType<VoxelTerrain>();
