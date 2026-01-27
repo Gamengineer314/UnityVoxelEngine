@@ -9,6 +9,7 @@ namespace Voxels.Editor {
     [InitializeOnLoad]
     internal class EditorVoxelRenderer : EditorWindow {
         private static readonly Dictionary<VoxelTerrain, GraphicsBuffer> commandsBuffers = new();
+        private static VoxelRenderers voxels = null;
 
         static EditorVoxelRenderer() {
             SceneView.duringSceneGui += EditorRender;
@@ -19,15 +20,16 @@ namespace Voxels.Editor {
             foreach (GraphicsBuffer buffer in commandsBuffers.Values) buffer.Dispose();
             VoxelTerrain[] terrains = FindObjectsOfType<VoxelTerrain>();
             foreach (VoxelTerrain terrain in terrains) terrain.Dispose();
-            if (VoxelRenderers.Instance) VoxelRenderers.Instance.Dispose();
+            if (voxels) voxels.Dispose();
         }
 
 
         private static void EditorRender(SceneView view) {
             // Init singletons
-            if (VoxelRenderers.Instance == null && !Application.isPlaying) {
-                VoxelRenderers voxels = FindObjectOfType<VoxelRenderers>();
-                if (voxels == null) return;
+            if (!VoxelRenderers.Instance) {
+                if (voxels) voxels.Dispose();
+                voxels = FindObjectOfType<VoxelRenderers>();
+                if (!voxels) return;
                 voxels.Init();
             }
 

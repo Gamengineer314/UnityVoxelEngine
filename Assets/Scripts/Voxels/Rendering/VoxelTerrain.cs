@@ -22,7 +22,9 @@ namespace Voxels.Rendering {
 
 
         private void Update() {
-            if (!voxels.Created && voxelsAsset) voxels = new(voxelsAsset);
+            if (!voxels.Created && voxelsAsset) {
+                voxels = new(voxelsAsset);
+            }
             if (voxels.Created && !generating && !Created) {
                 StartGenerate();
                 generating = true;
@@ -48,7 +50,9 @@ namespace Voxels.Rendering {
                 generator.Dispose();
                 generating = false;
             }
-            if (voxels.Created) voxels.Dispose();
+            if (voxels.Created) {
+                voxels.Dispose();
+            }
         }
 
 
