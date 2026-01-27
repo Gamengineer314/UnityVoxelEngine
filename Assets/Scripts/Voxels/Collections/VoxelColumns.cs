@@ -66,10 +66,19 @@ namespace Voxels.Collections {
         /// <param name="z">z coordinate of the voxel</param>
         /// <returns>Data of the voxel if found, default otherwise</returns>
         public T GetVoxel(int x, int y, int z) {
-            for (int i = startIndices[x + sizeX * z]; i < startIndices[x + sizeX * z + 1]; i++) {
-                if (voxels[i].y == y) return voxels[i].data;
+            int start = startIndices[x + sizeX * z];
+            int len = startIndices[x + sizeX * z + 1] - start;
+            while (len > 0) {
+                int half = len >> 1;
+                int middle = start + half;
+                if (voxels[middle].y < y) {
+                    start = middle + 1;
+                    len -= half + 1;
+                }
+                else len = half;
             }
-            return default;
+            Voxel<T> voxel = voxels[start];
+            return voxel.y == y ? voxel.data : default;
         }
 
         public T GetVoxel(int3 coords) => GetVoxel(coords.x, coords.y, coords.z);
