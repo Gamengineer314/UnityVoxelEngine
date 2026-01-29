@@ -8,7 +8,7 @@ namespace Voxels.Editor {
 
     [InitializeOnLoad]
     internal class EditorVoxelRenderer : EditorWindow {
-        private static readonly Dictionary<VoxelTerrain, GraphicsBuffer> commandsBuffers = new();
+        private static readonly Dictionary<VoxelTerrain, VoxelTerrainRenderer.Commands> terrainCommands = new();
         private static VoxelRenderers voxels = null;
 
         static EditorVoxelRenderer() {
@@ -17,7 +17,7 @@ namespace Voxels.Editor {
         }
 
         private static void Dispose() {
-            foreach (GraphicsBuffer buffer in commandsBuffers.Values) buffer.Dispose();
+            foreach (VoxelTerrainRenderer.Commands buffer in terrainCommands.Values) buffer.Dispose();
             VoxelTerrain[] terrains = FindObjectsOfType<VoxelTerrain>();
             foreach (VoxelTerrain terrain in terrains) terrain.Dispose();
             if (voxels) voxels.Dispose();
@@ -34,33 +34,31 @@ namespace Voxels.Editor {
             }
 
             Camera sceneCamera = SceneView.currentDrawingSceneView.camera;
-            RenderTerrains(sceneCamera);
+            //RenderTerrains(sceneCamera);
         }
 
 
         private static void RenderTerrains(Camera sceneCamera) {
             VoxelRenderers voxels = VoxelRenderers.Instance;
-            RenderParams renderParams = new(voxels.terrainMaterial) { camera = sceneCamera };
 
             VoxelTerrain[] terrains = FindObjectsOfType<VoxelTerrain>();
             foreach (VoxelTerrain terrain in terrains) {
                 if (!terrain.Created) continue;
-                if (!commandsBuffers.ContainsKey(terrain)) commandsBuffers[terrain] = VoxelTerrainRenderer.CreateCommands(terrain.MeshCount);
-                GraphicsBuffer commandsBuffer = commandsBuffers[terrain];
+                if (!terrainCommands.ContainsKey(terrain)) terrainCommands[terrain] = new(terrain, sceneCamera);
+                VoxelTerrainRenderer.Commands commands = terrainCommands[terrain];
 
                 SceneRender render = SceneRender.Get(terrain);
                 if (render.mode == SceneRender.Mode.None) continue;
                 int count;
                 if (render.mode == SceneRender.Mode.All) {
-                    count = VoxelTerrainRenderer.PrepareDraw(terrain, sceneCamera, commandsBuffer);
+                    count = VoxelTerrainRenderer.PrepareDraw(terrain, sceneCamera, commands);
                 }
                 else {
                     VoxelTerrainRenderer renderer = (VoxelTerrainRenderer)render.renderer;
-                    count = VoxelTerrainRenderer.PrepareDraw(terrain, renderer.target, commandsBuffer);
+                    count = VoxelTerrainRenderer.PrepareDraw(terrain, renderer.target, commands);
                 }
 
-                renderParams.worldBounds = new(Vector3.zero, new Vector3(float.MaxValue, float.MaxValue, float.MaxValue));
-                Graphics.RenderPrimitivesIndexedIndirect(renderParams, MeshTopology.Triangles, voxels.indicesBuffer, commandsBuffer, count);
+                Graphics.RenderPrimitivesIndexedIndirect(commands.renderParams, MeshTopology.Triangles, voxels.indicesBuffer, commands.commandsBuffer, count);
             }
         }
     }

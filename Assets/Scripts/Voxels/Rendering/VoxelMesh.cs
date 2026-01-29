@@ -3,52 +3,29 @@ using Unity.Mathematics;
 namespace Voxels.Rendering {
 
     /// <summary>
-    /// Face of a voxel in a terrain (packed to be usable in GPU buffers)
+    /// Face of a voxel (packed to be usable in GPU buffers)
     /// </summary>
-    internal readonly struct VoxelTerrainFace {
-        public const int maxCoord = (1 << 16) - 1;
-        public const int maxSize = 1 << 6;
+    internal readonly struct VoxelFace {
+        public const int maxSize = 1024;
+        public const int maxColor = 65535;
 
-        public readonly uint data1; // x (16b), z (16b)
-        public readonly uint data2; // y (9b), width (6b), height (6b), normal (3b), color (8b)
+        public readonly uint data1; // x (10b), y (10b), z (10b)
+        public readonly uint data2; // width (6b), height (6b), normal (3b), color (16b)
 
-        public VoxelTerrainFace(uint3 pos, uint width, uint height, VoxelNormal normal, uint color) {
-            data1 = pos.x | (pos.z << 16);
-            data2 = pos.y | ((width - 1) << 9) | ((height - 1) << 15) | ((uint)normal << 21) | (color << 24);
+        public VoxelFace(int3 pos, int width, int height, VoxelNormal normal, int color) {
+            data1 = (uint)pos.x | (uint)pos.y << 10 | (uint)pos.z << 20;
+            data2 = (uint)width - 1 | (uint)height - 1 << 6 | (uint)normal << 12 | (uint)color << 16;
         }
 
-        public uint X => data1 & 0b1111111111111111;
-        public uint Y => data2 & 0b111111111;
-        public uint Z => data1 >> 16;
-        public uint Width => ((data2 >> 9) & 0b111111) + 1;
-        public uint Height => ((data2 >> 15) & 0b111111) + 1;
-        public VoxelNormal Normal => (VoxelNormal)((data2 >> 21) & 0b111);
-        public uint Color => data2 >> 24;
-    }
+        public int X => (int)(data1 & 0x3FF);
+        public int Y => (int)(data1 >> 10 & 0x3FF);
+        public int Z => (int)(data1 >> 20);
+        public int Width => (int)((data2 & 0x3F) + 1);
+        public int Height => (int)((data2 >> 6 & 0x3F) + 1);
+        public VoxelNormal Normal => (VoxelNormal)(data2 >> 12 & 7);
+        public int Color => (int)(data2 >> 16);
 
-
-    /// <summary>
-    /// Face of a voxel in an object (packed to be usable in GPU buffers)
-    /// </summary>
-    internal readonly struct VoxelObjectFace {
-        public const int maxCoord = (1 << 9) - 1;
-        public const int maxSize = 1 << 6;
-
-        public readonly uint data1; // x (9b), y (9b), z (9b), normal (3b)
-        public readonly uint data2; // width (6b), height (6b), texture (20b)
-
-        public VoxelObjectFace(uint3 pos, uint width, uint height, VoxelNormal normal, uint texture) {
-            data1 = pos.x | (pos.y << 9) | (pos.z << 18) | ((uint)normal << 27);
-            data2 = (width - 1) | ((height - 1) << 6) | (texture << 12);
-        }
-
-        public uint X => data1 & 0b111111111;
-        public uint Y => (data1 >> 9) & 0b111111111;
-        public uint Z => (data1 >> 18) & 0b111111111;
-        public uint Width => (data2 & 0b111111) + 1;
-        public uint Height => ((data2 >> 6) & 0b111111) + 1;
-        public VoxelNormal Normal => (VoxelNormal)(data1 >> 27);
-        public uint Texture => data2 >> 12;
+        public override string ToString() => $"[({X} {Y} {Z}) ({Width} {Height}) {Normal} {Color}]";
     }
 
 
@@ -58,20 +35,38 @@ namespace Voxels.Rendering {
     /// </summary>
     internal readonly struct VoxelMesh {
         public readonly float3 center;
-        public readonly uint data1; // normal (3b), faceCount (29b)
         public readonly float3 size;
-        public readonly uint data2; // startFace (32b)
+        public readonly float3 position;
+        private readonly uint data1; // normal (3b), faceCount (29b)
+        private readonly uint startFace;
 
-        public VoxelMesh(float3 center, float3 size, VoxelNormal normal, uint faceCount, uint startFace) {
+        public VoxelMesh(float3 center, float3 size, float3 position, VoxelNormal normal, int faceCount, int startFace) {
             this.center = center;
             this.size = size;
-            data1 = (uint)normal | (faceCount << 3);
-            data2 = startFace;
+            this.position = position;
+            data1 = (uint)normal | ((uint)faceCount << 3);
+            this.startFace = (uint)startFace;
         }
 
-        public uint FaceCount => data1 >> 3;
-        public uint StartFace => data2;
-        public uint Normal => data1 & 0b111;
+        public int StartFace => (int)startFace;
+        public int FaceCount => (int)(data1 >> 3);
+        public VoxelNormal Normal => (VoxelNormal)(data1 & 0b111);
+    }
+
+
+    /// <summary>
+    /// Object voxel mesh
+    /// </summary>
+    internal readonly struct ObjectVoxelMesh {
+        public readonly VoxelMesh mesh;
+        private readonly uint startColor;
+
+        public ObjectVoxelMesh(float3 center, float3 size, float3 position, VoxelNormal normal, int faceCount, int startFace, int startColor) {
+            mesh = new(center, size, position, normal, faceCount, startFace);
+            this.startColor = (uint)startColor;
+        }
+
+        public int StartColor => (int)startColor;
     }
 
 
@@ -79,12 +74,12 @@ namespace Voxels.Rendering {
     /// Normals for a cube
     /// </summary>
     public enum VoxelNormal {
-        XPositive = 0,
-        XNegative = 1,
-        YPositive = 2,
-        YNegative = 3,
-        ZPositive = 4,
-        ZNegative = 5,
+        XNegative = 0,
+        XPositive = 1,
+        YNegative = 2,
+        YPositive = 3,
+        ZNegative = 4,
+        ZPositive = 5,
         Any = 6,
         None = 7
     }
@@ -102,7 +97,7 @@ namespace Voxels.Rendering {
         /// <summary>
         /// Whether a normal is positive or negative
         /// </summary>
-        public static bool Positive(VoxelNormal normal) => ((int)normal & 1) == 0;
+        public static bool Positive(VoxelNormal normal) => ((int)normal & 1) == 1;
 
         // x: 1, y: 0, z: 1
         internal static int WidthAxis(VoxelNormal normal) => WidthAxis(Axis(normal));

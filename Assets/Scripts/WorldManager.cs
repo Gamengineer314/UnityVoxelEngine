@@ -17,7 +17,7 @@ public class WorldManager : MonoBehaviour {
     private void Start() {
         // Generate terrain
         Stopwatch watch = Stopwatch.StartNew();
-        VoxelColumns<Color32> voxels = terrainGenerator.GenerateTerrain();
+        VoxelColumns voxels = terrainGenerator.GenerateTerrain();
         Debug.Log($"Terrain generated in {watch.ElapsedMilliseconds} ms");
 
         // Generate mesh

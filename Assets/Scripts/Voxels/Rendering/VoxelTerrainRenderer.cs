@@ -1,3 +1,4 @@
+using Unity.Mathematics;
 using UnityEngine;
 
 namespace Voxels.Rendering {
@@ -6,55 +7,34 @@ namespace Voxels.Rendering {
         public VoxelTerrain terrain; // Terrain to render
         public Camera target; // Camera to render the terrain on
 
-        private RenderParams renderParams;
-        private GraphicsBuffer commandsBuffer;
+        private Commands commands;
         private bool rendering;
 
 
         private void LateUpdate() {
             if (!rendering && terrain.Created) StartRender();
             if (rendering) {
-                int count = PrepareDraw(terrain, target, commandsBuffer);
-                Graphics.RenderPrimitivesIndexedIndirect(renderParams, MeshTopology.Triangles, VoxelRenderers.Instance.indicesBuffer, commandsBuffer, count);
+                int count = PrepareDraw(terrain, target, commands);
+                Graphics.RenderPrimitivesIndexedIndirect(commands.renderParams, MeshTopology.Triangles, VoxelRenderers.Instance.indicesBuffer, commands.commandsBuffer, count);
             }
         }
 
 
         private void StartRender() {
             rendering = true;
-            renderParams = new(VoxelRenderers.Instance.terrainMaterial) {
-                camera = target,
-                worldBounds = new(Vector3.zero, new Vector3(float.MaxValue, float.MaxValue, float.MaxValue))
-            };
-            commandsBuffer = CreateCommands(terrain.MeshCount);
-        }
-
-
-        /// <summary>
-        /// Create a commands buffer
-        /// </summary>
-        /// <param name="meshCount">Maximum number of meshes that can be rendered</param>
-        /// <returns>The buffer</returns>
-        internal static GraphicsBuffer CreateCommands(int meshCount) {
-            GraphicsBuffer buffer = new(GraphicsBuffer.Target.IndirectArguments | GraphicsBuffer.Target.Counter | GraphicsBuffer.Target.Structured, meshCount, GraphicsBuffer.IndirectDrawIndexedArgs.size);
-            GraphicsBuffer.IndirectDrawIndexedArgs[] commands = new GraphicsBuffer.IndirectDrawIndexedArgs[meshCount];
-            for (int i = 0; i < meshCount; i++) commands[i] = new() { instanceCount = 1 };
-            buffer.SetData(commands);
-            return buffer;
+            commands = new Commands(terrain, target);
         }
 
 
         /// <summary>
         /// Prepare a draw call
         /// </summary>
-        /// <param name="terrain">The terrain to draw</param>
-        /// <param name="target">The target camera</param>
-        /// <param name="commandsBuffer">The commands buffer to use</param>
+        /// <param name="terrain">Terrain to draw</param>
+        /// <param name="target">Target camera</param>
+        /// <param name="commands">Command buffers to use</param>
         /// <returns>Number of commands to draw</returns>
-        internal static int PrepareDraw(VoxelTerrain terrain, Camera target, GraphicsBuffer commandsBuffer) {
+        internal static int PrepareDraw(VoxelTerrain terrain, Camera target, Commands commands) {
             VoxelRenderers voxels = VoxelRenderers.Instance;
-            voxels.terrainMaterial.SetBuffer(voxels.facesId, terrain.facesBuffer);
-            voxels.terrainMaterial.SetBuffer(voxels.colorsId, terrain.colorsBuffer);
 
             // Set camera data
             voxels.terrainCulling.SetVector(voxels.cameraPositionId, target.transform.position);
@@ -67,10 +47,11 @@ namespace Voxels.Rendering {
 
             // Frustrum culling
             voxels.terrainCulling.SetBuffer(0, voxels.meshesId, terrain.meshesBuffer);
-            voxels.terrainCulling.SetBuffer(0, voxels.commandsId, commandsBuffer);
-            commandsBuffer.SetCounterValue(0);
+            voxels.terrainCulling.SetBuffer(0, voxels.commandsId, commands.commandsBuffer);
+            voxels.terrainCulling.SetBuffer(0, voxels.positionsId, commands.positionsBuffer);
+            commands.commandsBuffer.SetCounterValue(0);
             voxels.terrainCulling.Dispatch(0, terrain.MeshCount / VoxelRenderers.terrainCullingGroupSize, 1, 1);
-            GraphicsBuffer.CopyCount(commandsBuffer, voxels.counterBuffer, 0);
+            GraphicsBuffer.CopyCount(commands.commandsBuffer, voxels.counterBuffer, 0);
             uint[] data = new uint[1];
             voxels.counterBuffer.GetData(data);
             return (int)data[0];
@@ -78,7 +59,50 @@ namespace Voxels.Rendering {
 
 
         private void OnDestroy() {
-            commandsBuffer?.Dispose();
+            commands?.Dispose();
+        }
+
+
+        internal class Commands {
+            internal readonly GraphicsBuffer commandsBuffer;
+            internal readonly GraphicsBuffer positionsBuffer;
+            internal readonly RenderParams renderParams;
+
+            /// <summary>
+            /// Create command buffers and render params
+            /// </summary>
+            /// <param name="terrain">Terrain to render</param>
+            /// <param name="target">Target camera</param>
+            internal Commands(VoxelTerrain terrain, Camera target) {
+                VoxelRenderers voxels = VoxelRenderers.Instance;
+
+                commandsBuffer = new(
+                    GraphicsBuffer.Target.IndirectArguments | GraphicsBuffer.Target.Counter | GraphicsBuffer.Target.Structured,
+                    terrain.MeshCount, GraphicsBuffer.IndirectDrawIndexedArgs.size
+                );
+                GraphicsBuffer.IndirectDrawIndexedArgs[] commands = new GraphicsBuffer.IndirectDrawIndexedArgs[terrain.MeshCount];
+                for (int i = 0; i < terrain.MeshCount; i++) commands[i] = new() { instanceCount = 1 };
+                commandsBuffer.SetData(commands);
+
+                positionsBuffer = new(GraphicsBuffer.Target.Structured, terrain.MeshCount, 4 * sizeof(float));
+                float4[] positions = new float4[terrain.MeshCount];
+                positionsBuffer.SetData(positions);
+
+                MaterialPropertyBlock props = new();
+                props.SetBuffer(voxels.facesId, terrain.facesBuffer);
+                props.SetBuffer(voxels.colorsId, terrain.colorsBuffer);
+                props.SetBuffer(voxels.positionsId, positionsBuffer);
+                renderParams = new(voxels.terrainMaterial) {
+                    camera = target,
+                    worldBounds = new(Vector3.zero, new Vector3(float.MaxValue, float.MaxValue, float.MaxValue)),
+                    matProps = props
+                };
+            }
+
+            internal void Dispose() {
+                commandsBuffer.Dispose();
+                positionsBuffer.Dispose();
+            }
         }
     }
 

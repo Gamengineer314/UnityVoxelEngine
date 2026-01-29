@@ -5,6 +5,7 @@ Shader "Unlit/VoxelShader" {
             #pragma vertex vert
             #pragma fragment frag
 
+            #include "VoxelTypes.cginc"
             #include "UnityCG.cginc"
             #define UNITY_INDIRECT_DRAW_ARGS IndirectDrawIndexedArgs
             #include "UnityIndirect.cginc"
@@ -16,29 +17,18 @@ Shader "Unlit/VoxelShader" {
                 nointerpolation fixed4 color : COLOR; // x,y,z: color, w: random variation ammount
             };
 
-            #define mask2Bits 3u             // 0b11
-            #define mask3Bits 7u             // 0b111
-            #define mask4Bits 15u            // 0b1111
-            #define mask6Bits 63u            // 0b111111
-            #define mask9Bits 511u           // 0b1111111111
-            #define mask16Bits 65535u         // 0b1111111111111111
-
             static const uint faceLightLevels[] = {
-                12, // x+
                 12, // x-
-                15, // y+
+                12, // x+
                 9,  // y-
-                12, // z+
+                15, // y+
                 12, // z-
+                12, // z+
             };
 
-            struct Face {
-                uint data1; // x (16b), z (16b)
-                uint data2; // y (9b), width (6b), height (6b), normal (3b), color (8b)
-            };
-
-            StructuredBuffer<Face> faces;
+            StructuredBuffer<VoxelFace> faces;
             StructuredBuffer<uint> colors;
+            StructuredBuffer<float4> positions;
 
             uniform float quadsInterleaving; // Remove 1 pixel gaps between triangles
 
@@ -53,29 +43,32 @@ Shader "Unlit/VoxelShader" {
 
 
             v2f vert(uint vertexID: SV_VertexID) {
-                // Get face
+                // Get data
                 uint faceID = vertexID >> 2;
-                uint faceData1 = faces[faceID].data1;
-                uint faceData2 = faces[faceID].data2;
-                vertexID &= mask2Bits;
+                VoxelFace face = faces[faceID];
+                vertexID &= 3;
+                uint cmd = GetCommandID(0);
+                float3 position = positions[cmd].xyz;
 
                 // Unpack data
-                float3 cubePos = float3(faceData1 & mask16Bits, faceData2 & mask9Bits, faceData1 >> 16);
-                uint normalID = (faceData2 >> 21) & mask3Bits;
-                float width = ((faceData2 >> 9) & mask6Bits) + 1;
-                float height = ((faceData2 >> 15) & mask6Bits) + 1;
-                uint normalAxis = normalID >> 1;
+                float3 cubePos = FACE_XYZ(face) + position;
+                uint normalID = FACE_NORMAL(face);
+                float width = FACE_WIDTH(face);
+                float height = FACE_HEIGHT(face);
+                uint colorID = FACE_COLOR(face);
+                uint normalAxis = NORMAL_AXIS(normalID);
 
                 // Position
                 float pos[3] = { cubePos.x, cubePos.y, cubePos.z };
                 float interleaving = distance(_WorldSpaceCameraPos, cubePos) * quadsInterleaving * 0.001f;
-                pos[1u & ~normalAxis] += -interleaving + ((uint(vertexID) & 1u) ^ uint(normalAxis != 0) ^ (normalID & 1u)) * (width + 2 * interleaving);
+                pos[normalAxis] += NORMAL_POSITIVE(normalID);
+                pos[1u & ~normalAxis] += -interleaving + ((uint(vertexID) & 1u) ^ uint(normalAxis != 0) ^ NORMAL_NEGATIVE(normalID)) * (width + 2 * interleaving);
                 pos[2u & ~normalAxis] += -interleaving + (vertexID >> 1) * (height + 2 * interleaving);
                 float normal[3] = { 0, 0, 0 };
-                normal[normalAxis] = -2 * float(normalID & 1u) + 1;
+                normal[normalAxis] = NORMAL_SIGN(normalID);
 
                 // Unpack color
-                uint color32 = colors[faceData2 >> 24];
+                uint color32 = colors[colorID];
                 fixed4 color;
                 color.r = (color32 & 0xFF) / 255.0;
                 color.g = ((color32 >> 8) & 0xFF) / 255.0;

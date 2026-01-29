@@ -435,6 +435,18 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 35da0ca07fb8fb24e91cfa1bc0eb3ccf, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  amplitude: 80
+  period: 500
+  idHeight: 50
+  colors:
+  - serializedVersion: 2
+    rgba: 423425525
+  - serializedVersion: 2
+    rgba: 419486735
+  - serializedVersion: 2
+    rgba: 260539010
+  - serializedVersion: 2
+    rgba: 267119595
 --- !u!114 &1587352368
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -493,7 +505,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   voxelsAsset: {fileID: 0}
-  maxHorizontalSize: 64
+  offset: {x: 0, y: 0, z: 0}
+  meshSize: 64
   mergeNormalsThreshold: 256
 --- !u!1 &1811439572
 GameObject:

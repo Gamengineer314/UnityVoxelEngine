@@ -7,9 +7,10 @@ namespace Voxels.Rendering {
     [ExecuteInEditMode]
     public class VoxelTerrain : MonoBehaviour {
         [SerializeField] private TextAsset voxelsAsset;
-        public int maxHorizontalSize = 64;
+        [NonSerialized] public VoxelColumns voxels;
+        public Vector3 offset;
+        public int meshSize = 64;
         public int mergeNormalsThreshold = 256;
-        [NonSerialized] public VoxelColumns<Color32> voxels;
 
         internal GraphicsBuffer facesBuffer { get; private set; }
         internal GraphicsBuffer meshesBuffer { get; private set; }
@@ -29,8 +30,7 @@ namespace Voxels.Rendering {
                 StartGenerate();
                 generating = true;
             }
-            if (generating && generator.handle.IsCompleted) {
-                generator.handle.Complete();
+            if (generating && generator.IsCompleted) {
                 FinishGenerate();
             }
         }
@@ -46,7 +46,8 @@ namespace Voxels.Rendering {
                 colorsBuffer.Dispose();
             }
             else if (generating) {
-                generator.handle.Complete();
+                generator.Complete();
+                generator.DisposeJobs();
                 generator.Dispose();
                 generating = false;
             }
@@ -57,8 +58,8 @@ namespace Voxels.Rendering {
 
 
         private void StartGenerate() {
-            generator = new(maxHorizontalSize, mergeNormalsThreshold, 1024);
-            generator.Generate(voxels);
+            generator = new(meshSize, mergeNormalsThreshold, 1024);
+            generator.Generate(voxels, offset);
         }
 
         /// <summary>
@@ -68,18 +69,21 @@ namespace Voxels.Rendering {
             if (Created) throw new InvalidOperationException("Can't call CompleteGenerate : terrain already generated");
             if (!voxels.Created) throw new InvalidOperationException("Can't call CompleteGenerate : voxels not set");
             if (!generating) StartGenerate();
-            generator.handle.Complete();
             FinishGenerate();
         }
 
         private unsafe void FinishGenerate() {
-            while (generator.meshes.Length % VoxelRenderers.terrainCullingGroupSize != 0) generator.meshes.Add(default);
-            facesBuffer = new(GraphicsBuffer.Target.Structured, generator.faces.Length, sizeof(VoxelTerrainFace));
-            facesBuffer.SetData(generator.faces.AsArray());
-            meshesBuffer = new(GraphicsBuffer.Target.Structured, generator.meshes.Length, sizeof(VoxelMesh));
-            meshesBuffer.SetData(generator.meshes.AsArray());
-            colorsBuffer = new(GraphicsBuffer.Target.Structured, generator.colors.Length, sizeof(Color32));
-            colorsBuffer.SetData(generator.colors.AsArray());
+            generator.Complete();
+            int ceiledMeshes = VoxelRenderers.terrainCullingGroupSize * Mathf.CeilToInt((float)generator.Meshes.Length / VoxelRenderers.terrainCullingGroupSize);
+            facesBuffer = new(GraphicsBuffer.Target.Structured, generator.Faces.Length, sizeof(VoxelFace));
+            facesBuffer.SetData(generator.Faces);
+            meshesBuffer = new(GraphicsBuffer.Target.Structured, ceiledMeshes, sizeof(VoxelMesh));
+            meshesBuffer.SetData(generator.Meshes);
+            int additional = ceiledMeshes - generator.Meshes.Length;
+            if (additional > 0) meshesBuffer.SetData(new VoxelMesh[additional], 0, generator.Meshes.Length, additional);
+            colorsBuffer = new(GraphicsBuffer.Target.Structured, generator.Colors.Length, sizeof(Color32));
+            colorsBuffer.SetData(generator.Colors);
+            generator.DisposeJobs();
             generator.Dispose();
             generating = false;
         }

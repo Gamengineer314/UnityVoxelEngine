@@ -36,9 +36,11 @@ namespace Voxels.Rendering {
         internal readonly int cameraDownPlaneId = Shader.PropertyToID("cameraDownPlane");
         internal readonly int cameraUpPlaneId = Shader.PropertyToID("cameraUpPlane");
         internal readonly int meshesId = Shader.PropertyToID("meshes");
-        internal readonly int commandsId = Shader.PropertyToID("commands");
         internal readonly int facesId = Shader.PropertyToID("faces");
         internal readonly int colorsId = Shader.PropertyToID("colors");
+        internal readonly int commandsId = Shader.PropertyToID("commands");
+        internal readonly int positionsId = Shader.PropertyToID("positions");
+
 
         private void Awake() {
             if (!Instance) Init();

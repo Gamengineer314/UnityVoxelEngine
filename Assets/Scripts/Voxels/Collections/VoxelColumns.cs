@@ -8,14 +8,13 @@ using UnityEngine;
 namespace Voxels.Collections {
 
     /// <summary>
-    /// Array of voxels that contain generic data.
-    /// The voxels are organized as sizeX * sizeZ columns of (y, data) pairs.
+    /// Array of voxels that contain a color.
+    /// The voxels are organized as sizeX * sizeZ columns of (y, color) pairs.
     /// </summary>
-    /// <typeparam name="T">Voxel data type</typeparam>
     [BurstCompile]
-    public readonly unsafe struct VoxelColumns<T> where T : unmanaged {
+    public readonly unsafe struct VoxelColumns {
         public readonly int sizeX, sizeZ; // Size in the x and z dimensions
-        internal readonly NativeArray<Voxel<T>> voxels; // All columns
+        internal readonly NativeArray<Voxel> voxels; // All columns
         internal readonly NativeArray<int> startIndices; // [sizeX * sizeZ + 1] sized array giving the start index of each column
 
 
@@ -31,9 +30,9 @@ namespace Voxels.Collections {
             int nVoxels = BitConverter.ToInt32(bytes, offset + 2 * sizeof(int));
             offset += 3 * sizeof(int);
             voxels = asset.GetData<byte>()
-                .GetSubArray(offset, nVoxels * sizeof(Voxel<T>))
-                .Reinterpret<Voxel<T>>(1);
-            offset += nVoxels * sizeof(Voxel<T>);
+                .GetSubArray(offset, nVoxels * sizeof(Voxel))
+                .Reinterpret<Voxel>(1);
+            offset += nVoxels * sizeof(Voxel);
             startIndices = asset.GetData<byte>()
                 .GetSubArray(offset, (sizeX * sizeZ + 1) * sizeof(int))
                 .Reinterpret<int>(1);
@@ -43,7 +42,7 @@ namespace Voxels.Collections {
         /// Create voxel columns from a height map
         /// </summary>
         /// <param name="map">Highest voxel in each column</param>
-        public VoxelColumns(Native2DArray<Voxel<T>> map) {
+        public VoxelColumns(Native2DArray<Voxel> map) {
             sizeX = map.sizeX;
             sizeZ = map.sizeY;
             FromHeightMap(in map, out voxels, out startIndices);
@@ -59,13 +58,13 @@ namespace Voxels.Collections {
 
 
         /// <summary>
-        /// Get the data of a voxel
+        /// Get the color of a voxel
         /// </summary>
         /// <param name="x">x coordinate of the voxel</param>
         /// <param name="y">y coordinate of the voxel</param>
         /// <param name="z">z coordinate of the voxel</param>
-        /// <returns>Data of the voxel if found, default otherwise</returns>
-        public T GetVoxel(int x, int y, int z) {
+        /// <returns>Color of the voxel if found, default otherwise</returns>
+        public Color32 GetVoxel(int x, int y, int z) {
             int start = startIndices[x + sizeX * z];
             int len = startIndices[x + sizeX * z + 1] - start;
             while (len > 0) {
@@ -77,11 +76,11 @@ namespace Voxels.Collections {
                 }
                 else len = half;
             }
-            Voxel<T> voxel = voxels[start];
-            return voxel.y == y ? voxel.data : default;
+            Voxel voxel = voxels[start];
+            return voxel.y == y ? voxel.color : default;
         }
 
-        public T GetVoxel(int3 coords) => GetVoxel(coords.x, coords.y, coords.z);
+        public Color32 GetVoxel(int3 coords) => GetVoxel(coords.x, coords.y, coords.z);
 
 
         /// <summary>
@@ -90,13 +89,13 @@ namespace Voxels.Collections {
         /// <param name="x">x coordinate of the column</param>
         /// <param name="z">z coordinate of the column</param>
         /// <returns>Enumerable of voxels</returns>
-        public NativeArray<Voxel<T>> GetColumn(int x, int z) {
+        public NativeArray<Voxel> GetColumn(int x, int z) {
             int start = startIndices[x + sizeX * z];
             int length = startIndices[x + sizeX * z + 1] - start;
             return voxels.GetSubArray(start, length);
         }
 
-        public NativeArray<Voxel<T>> GetColumn(int2 coords) => GetColumn(coords.x, coords.y);
+        public NativeArray<Voxel> GetColumn(int2 coords) => GetColumn(coords.x, coords.y);
 
 
         /// <summary>
@@ -137,14 +136,14 @@ namespace Voxels.Collections {
             file.Write(BitConverter.GetBytes(sizeX));
             file.Write(BitConverter.GetBytes(sizeZ));
             file.Write(BitConverter.GetBytes(voxels.Length));
-            file.Write(voxels.Reinterpret<byte>(sizeof(Voxel<T>)).ToArray());
+            file.Write(voxels.Reinterpret<byte>(sizeof(Voxel)).ToArray());
             file.Write(startIndices.Reinterpret<byte>(sizeof(int)).ToArray());
         }
 
 
         [BurstCompile]
-        private static void FromHeightMap(in Native2DArray<Voxel<T>> map, out NativeArray<Voxel<T>> voxels, out NativeArray<int> startIndices) {
-            NativeList<Voxel<T>> voxelsList = new(Allocator.Persistent);
+        private static void FromHeightMap(in Native2DArray<Voxel> map, out NativeArray<Voxel> voxels, out NativeArray<int> startIndices) {
+            NativeList<Voxel> voxelsList = new(Allocator.Persistent);
             startIndices = new(map.sizeX * map.sizeY + 1, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
 
             for (int z = 0; z < map.sizeY; z++) {
@@ -160,7 +159,7 @@ namespace Voxels.Collections {
                     // Add voxels
                     startIndices[x + map.sizeX * z] = voxelsList.Length;
                     for (int y = minNeighbor + 1; y <= maxY; y++) {
-                        voxelsList.Add(new(y, map[x, z].data));
+                        voxelsList.Add(new(y, map[x, z].color));
                     }
                 }
             }
@@ -174,16 +173,15 @@ namespace Voxels.Collections {
 
 
     /// <summary>
-    /// (y, data) pair in a VoxelColumns struct
+    /// (y, color) pair in a VoxelColumns struct
     /// </summary>
-    /// <typeparam name="T">Data type</typeparam>
-    public readonly struct Voxel<T> where T : unmanaged {
+    public readonly struct Voxel {
         public readonly int y;
-        public readonly T data;
+        public readonly Color32 color;
 
-        public Voxel(int y, T data) {
+        public Voxel(int y, Color32 color) {
             this.y = y;
-            this.data = data;
+            this.color = color;
         }
     }
     
