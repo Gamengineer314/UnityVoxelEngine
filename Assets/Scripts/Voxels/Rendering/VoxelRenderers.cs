@@ -7,7 +7,7 @@ namespace Voxels.Rendering {
     /// Voxel renderers global data
     /// </summary>
     public class VoxelRenderers : MonoBehaviour {
-        internal const int terrainCullingGroupSize = 64;
+        internal const int cullingGroupSize = 64;
         internal const int maxFaceCount = 16384;
 
         internal static VoxelRenderers Instance { get; private set; }
@@ -39,7 +39,7 @@ namespace Voxels.Rendering {
         internal readonly int facesId = Shader.PropertyToID("faces");
         internal readonly int colorsId = Shader.PropertyToID("colors");
         internal readonly int commandsId = Shader.PropertyToID("commands");
-        internal readonly int positionsId = Shader.PropertyToID("positions");
+        internal readonly int offsetsId = Shader.PropertyToID("offsets");
 
 
         private void Awake() {

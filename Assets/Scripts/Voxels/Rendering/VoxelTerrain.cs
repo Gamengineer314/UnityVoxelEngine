@@ -74,7 +74,7 @@ namespace Voxels.Rendering {
 
         private unsafe void FinishGenerate() {
             generator.Complete();
-            int ceiledMeshes = VoxelRenderers.terrainCullingGroupSize * Mathf.CeilToInt((float)generator.Meshes.Length / VoxelRenderers.terrainCullingGroupSize);
+            int ceiledMeshes = VoxelRenderers.cullingGroupSize * Mathf.CeilToInt((float)generator.Meshes.Length / VoxelRenderers.cullingGroupSize);
             facesBuffer = new(GraphicsBuffer.Target.Structured, generator.Faces.Length, sizeof(VoxelFace));
             facesBuffer.SetData(generator.Faces);
             meshesBuffer = new(GraphicsBuffer.Target.Structured, ceiledMeshes, sizeof(VoxelMesh));

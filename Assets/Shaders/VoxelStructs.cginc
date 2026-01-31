@@ -27,3 +27,9 @@ struct VoxelFace {
 #define NORMAL_SIGN(normal) (2 * int(NORMAL_POSITIVE(normal)) - 1)
 #define NORMAL_AXIS(normal) ((normal) >> 1)
 #define NORMAL_ANY 6
+
+
+struct CommandOffset {
+    float3 position;
+    uint color;
+};

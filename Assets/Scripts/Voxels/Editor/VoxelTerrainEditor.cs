@@ -1,5 +1,4 @@
 #if UNITY_EDITOR
-using UnityEngine;
 using UnityEditor;
 using Voxels.Rendering;
 using System.Linq;

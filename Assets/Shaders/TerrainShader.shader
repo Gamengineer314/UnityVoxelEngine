@@ -5,7 +5,7 @@ Shader "Unlit/VoxelShader" {
             #pragma vertex vert
             #pragma fragment frag
 
-            #include "VoxelTypes.cginc"
+            #include "VoxelStructs.cginc"
             #include "UnityCG.cginc"
             #define UNITY_INDIRECT_DRAW_ARGS IndirectDrawIndexedArgs
             #include "UnityIndirect.cginc"
@@ -28,7 +28,7 @@ Shader "Unlit/VoxelShader" {
 
             StructuredBuffer<VoxelFace> faces;
             StructuredBuffer<uint> colors;
-            StructuredBuffer<float4> positions;
+            StructuredBuffer<CommandOffset> offsets;
 
             uniform float quadsInterleaving; // Remove 1 pixel gaps between triangles
 
@@ -48,7 +48,7 @@ Shader "Unlit/VoxelShader" {
                 VoxelFace face = faces[faceID];
                 vertexID &= 3;
                 uint cmd = GetCommandID(0);
-                float3 position = positions[cmd].xyz;
+                float3 position = offsets[cmd].position;
 
                 // Unpack data
                 float3 cubePos = FACE_XYZ(face) + position;

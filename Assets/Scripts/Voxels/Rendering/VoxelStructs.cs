@@ -3,7 +3,7 @@ using Unity.Mathematics;
 namespace Voxels.Rendering {
 
     /// <summary>
-    /// Face of a voxel (packed to be usable in GPU buffers)
+    /// Face of a voxel
     /// </summary>
     internal readonly struct VoxelFace {
         public const int maxSize = 1024;
@@ -30,8 +30,7 @@ namespace Voxels.Rendering {
 
 
     /// <summary>
-    /// Voxel mesh (packed to be usable in GPU buffers).
-    /// Faces must be stored in a separate container.
+    /// Per-mesh data
     /// </summary>
     internal readonly struct VoxelMesh {
         public readonly float3 center;
@@ -55,18 +54,27 @@ namespace Voxels.Rendering {
 
 
     /// <summary>
-    /// Object voxel mesh
+    /// Per-mesh data for objects
     /// </summary>
-    internal readonly struct ObjectVoxelMesh {
+    internal readonly struct ObjectMesh {
         public readonly VoxelMesh mesh;
         private readonly uint startColor;
 
-        public ObjectVoxelMesh(float3 center, float3 size, float3 position, VoxelNormal normal, int faceCount, int startFace, int startColor) {
+        public ObjectMesh(float3 center, float3 size, float3 position, VoxelNormal normal, int faceCount, int startFace, int startColor) {
             mesh = new(center, size, position, normal, faceCount, startFace);
             this.startColor = (uint)startColor;
         }
 
         public int StartColor => (int)startColor;
+    }
+    
+    
+    /// <summary>
+    /// Per-command offsets
+    /// </summary>
+    internal readonly struct CommandOffset {
+        public readonly float3 position;
+        public readonly uint color;
     }
 
 

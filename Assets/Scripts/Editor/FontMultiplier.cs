@@ -9,7 +9,7 @@ using System.Reflection;
 // Modified from https://github.com/5argon/ModifyEditorStyle and https://gist.github.com/nukadelic/47474c7e5d4ee5909462e3b900f4cb82
 
 [InitializeOnLoad]
-public class FontMultiplier {
+public static class FontMultiplier {
     private static readonly Dictionary<string, DefaultSize> defaultValues;
     private static Delegate prevDelegate;
     private static Delegate newDelegate;

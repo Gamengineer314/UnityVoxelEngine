@@ -1,6 +1,6 @@
 #pragma kernel pickMeshes
 
-#include "VoxelTypes.cginc"
+#include "VoxelStructs.cginc"
 #include "UnityIndirect.cginc"
 
 uniform float4 cameraFarPlane; // x,y,z: normal, w: distance
@@ -11,7 +11,7 @@ uniform float4 cameraUpPlane;
 uniform float4 cameraPosition; // x,y,z: position
 StructuredBuffer<VoxelMesh> meshes; // All meshes information (position, size, squares indices)
 RWStructuredBuffer<IndirectDrawIndexedArgs> commands; // Indirect arguments
-RWStructuredBuffer<float4> positions;
+RWStructuredBuffer<CommandOffset> offsets;
 
 
 bool outsidePlane(float3 center, float3 size, float4 plane) {
@@ -51,6 +51,6 @@ void pickMeshes(uint3 id : SV_DispatchThreadID) { // id.x : id of the mesh
         uint index = commands.IncrementCounter();
         commands[index].indexCountPerInstance = faceCount * 6;
         commands[index].baseVertexIndex = startFace * 4;
-        positions[index].xyz = mesh.position;
+        offsets[index].position = mesh.position;
     }
 }
