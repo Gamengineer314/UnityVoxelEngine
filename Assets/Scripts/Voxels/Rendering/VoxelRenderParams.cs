@@ -10,6 +10,7 @@ namespace Voxels.Rendering {
         private readonly GraphicsBuffer commandsBuffer;
         private readonly GraphicsBuffer offsetsBuffer;
         private readonly RenderParams renderParams;
+        private uint[] count = new uint[1];
 
 
         /// <summary>
@@ -27,15 +28,12 @@ namespace Voxels.Rendering {
             this.meshesBuffer = meshesBuffer;
             VoxelRenderers voxels = VoxelRenderers.Instance;
 
-            commandsBuffer = new(
-                GraphicsBuffer.Target.IndirectArguments | GraphicsBuffer.Target.Counter | GraphicsBuffer.Target.Structured,
-                meshesBuffer.count, GraphicsBuffer.IndirectDrawIndexedArgs.size
-            );
+            commandsBuffer = new(GraphicsBuffer.Target.IndirectArguments, meshesBuffer.count, GraphicsBuffer.IndirectDrawIndexedArgs.size);
             GraphicsBuffer.IndirectDrawIndexedArgs[] commands = new GraphicsBuffer.IndirectDrawIndexedArgs[meshesBuffer.count];
             for (int i = 0; i < meshesBuffer.count; i++) commands[i] = new() { instanceCount = 1 };
             commandsBuffer.SetData(commands);
 
-            offsetsBuffer = new(GraphicsBuffer.Target.Structured, meshesBuffer.count, sizeof(CommandOffset));
+            offsetsBuffer = new(GraphicsBuffer.Target.Structured | GraphicsBuffer.Target.Counter, meshesBuffer.count, sizeof(CommandOffset));
             CommandOffset[] positions = new CommandOffset[meshesBuffer.count];
             offsetsBuffer.SetData(positions);
 
@@ -52,11 +50,11 @@ namespace Voxels.Rendering {
 
 
         /// <summary>
-        /// Render the meshes
+        /// Frustrum and back-face culling
         /// </summary>
         /// <param name="cullingCamera">Camera used for culling</param>
         /// <param name="cullingShader">Compute shader used for culling</param>
-        internal void Render(Camera cullingCamera, ComputeShader cullingShader) {
+        internal void Cull(Camera cullingCamera, ComputeShader cullingShader) {
             VoxelRenderers voxels = VoxelRenderers.Instance;
 
             // Set camera data
@@ -72,13 +70,17 @@ namespace Voxels.Rendering {
             cullingShader.SetBuffer(0, voxels.meshesId, meshesBuffer);
             cullingShader.SetBuffer(0, voxels.commandsId, commandsBuffer);
             cullingShader.SetBuffer(0, voxels.offsetsId, offsetsBuffer);
-            commandsBuffer.SetCounterValue(0);
+            offsetsBuffer.SetCounterValue(0);
             cullingShader.Dispatch(0, meshesBuffer.count / VoxelRenderers.cullingGroupSize, 1, 1);
-            GraphicsBuffer.CopyCount(commandsBuffer, voxels.counterBuffer, 0);
-            uint[] count = new uint[1];
+            GraphicsBuffer.CopyCount(offsetsBuffer, voxels.counterBuffer, 0);
             voxels.counterBuffer.GetData(count);
-            
-            // Draw call
+        }
+
+
+        /// <summary>
+        /// Render the meshes
+        /// </summary>
+        internal void Render() {
             Graphics.RenderPrimitivesIndexedIndirect(renderParams, MeshTopology.Triangles, VoxelRenderers.Instance.indicesBuffer, commandsBuffer, (int)count[0]);
         }
 

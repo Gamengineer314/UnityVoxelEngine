@@ -52,13 +52,14 @@ namespace Voxels.Editor {
 
                 SceneRender render = SceneRender.Get(terrain);
                 if (render.mode == SceneRender.Mode.None) continue;
-                else if (render.mode == SceneRender.Mode.All) {
-                    renderParam.Render(sceneCamera, VoxelRenderers.Instance.terrainCulling);
+                if (render.mode == SceneRender.Mode.All) {
+                    renderParam.Cull(sceneCamera, VoxelRenderers.Instance.terrainCulling);
                 }
                 else {
                     VoxelTerrainRenderer terrainRenderer = (VoxelTerrainRenderer)render.renderer;
-                    renderParam.Render(terrainRenderer.target, VoxelRenderers.Instance.terrainCulling);
+                    renderParam.Cull(terrainRenderer.target, VoxelRenderers.Instance.terrainCulling);
                 }
+                renderParam.Render();
             }
         }
     }

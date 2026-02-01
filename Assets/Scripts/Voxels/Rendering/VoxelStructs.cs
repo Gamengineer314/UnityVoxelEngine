@@ -50,6 +50,8 @@ namespace Voxels.Rendering {
         public int StartFace => (int)startFace;
         public int FaceCount => (int)(data1 >> 3);
         public VoxelNormal Normal => (VoxelNormal)(data1 & 0b111);
+
+        public override string ToString() => $"[{center} {size} {position} {Normal} {StartFace} {FaceCount}]";
     }
 
 

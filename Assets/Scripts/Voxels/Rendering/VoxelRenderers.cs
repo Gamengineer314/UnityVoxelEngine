@@ -68,7 +68,7 @@ namespace Voxels.Rendering {
             }
             indicesBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Index, indices.Length, sizeof(ushort));
             indicesBuffer.SetData(indices);
-            counterBuffer = new(GraphicsBuffer.Target.Structured, 1, sizeof(uint));
+            counterBuffer = new(GraphicsBuffer.Target.Raw, 1, sizeof(uint));
 
             terrainMaterial.SetFloat("quadsInterleaving", quadsInterleaving);
             terrainMaterial.SetFloat("seed", Random.value);
