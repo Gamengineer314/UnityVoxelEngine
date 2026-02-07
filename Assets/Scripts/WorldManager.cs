@@ -17,13 +17,13 @@ public class WorldManager : MonoBehaviour {
     private void Start() {
         // Generate terrain
         Stopwatch watch = Stopwatch.StartNew();
-        //VoxelColumns voxels = terrainGenerator.GenerateTerrain();
+        VoxelColumns voxels = terrainGenerator.GenerateTerrain();
         Debug.Log($"Terrain generated in {watch.ElapsedMilliseconds} ms");
 
         // Generate mesh
         watch.Restart();
-        //terrain.voxels = voxels;
-        //terrain.CompleteGenerate();
+        terrain.voxels = voxels;
+        terrain.CompleteGenerate();
         Debug.Log($"Mesh generated in {watch.ElapsedMilliseconds} ms");
     }
 }

@@ -51,16 +51,7 @@ namespace Voxels.Editor {
                     renderParams.FacesBuffer = terrain.facesBuffer;
                     renderParams.ColorsBuffer = terrain.colorsBuffer;
                 }
-
-                SceneRender render = SceneRender.Get(terrain);
-                if (render.mode == SceneRender.Mode.None) continue;
-                if (render.mode == SceneRender.Mode.All) {
-                    renderParams.Cull(sceneCamera, VoxelRenderers.Instance.terrainCulling, VoxelRenderers.terrainCullingGroupSize);
-                }
-                else {
-                    VoxelTerrainRenderer renderer = (VoxelTerrainRenderer)render.renderer;
-                    renderParams.Cull(renderer.target, VoxelRenderers.Instance.terrainCulling, VoxelRenderers.terrainCullingGroupSize);
-                }
+                renderParams.Cull(sceneCamera, VoxelRenderers.Instance.terrainCulling, VoxelRenderers.terrainCullingGroupSize);
                 renderParams.Render();
             }
         }
@@ -80,16 +71,7 @@ namespace Voxels.Editor {
                 objectsRenderParams.ColorsBuffer = objects.ColorsBuffer;
                 objectsRenderParams.TransformsBuffer = objects.TransformsBuffer;
             }
-
-            SceneRender render = SceneRender.Get(objects);
-            if (render.mode == SceneRender.Mode.None) return;
-            if (render.mode == SceneRender.Mode.All) {
-                objectsRenderParams.Cull(sceneCamera, VoxelRenderers.Instance.objectsCulling);
-            }
-            else {
-                VoxelObjectRenderer renderer = (VoxelObjectRenderer)render.renderer;
-                objectsRenderParams.Cull(renderer.target, VoxelRenderers.Instance.objectsCulling);
-            }
+            objectsRenderParams.Cull(sceneCamera, VoxelRenderers.Instance.objectsCulling);
             objectsRenderParams.Render();
         }
     }
