@@ -8,33 +8,30 @@ namespace Voxels.Editor {
 
     [InitializeOnLoad]
     internal static class EditorVoxelRenderer {
-        private static readonly Dictionary<VoxelTerrain, VoxelRenderParams> renderParams = new();
-        private static VoxelRenderers voxels = null;
+        private static readonly Dictionary<VoxelTerrain, VoxelRenderParams> terrainRenderParams = new();
+        private static ObjectRenderParams objectsRenderParams = null;
+
 
         static EditorVoxelRenderer() {
             SceneView.duringSceneGui += EditorRender;
-            AssemblyReloadEvents.beforeAssemblyReload += Dispose;
-        }
-
-        private static void Dispose() {
-            foreach (VoxelRenderParams renderer in renderParams.Values) renderer.Dispose();
-            VoxelTerrain[] terrains = Object.FindObjectsOfType<VoxelTerrain>();
-            foreach (VoxelTerrain terrain in terrains) terrain.Dispose();
-            if (voxels) voxels.Dispose();
+            AssemblyReloadEvents.beforeAssemblyReload += () => {
+                foreach (VoxelRenderers renderers in Object.FindObjectsOfType<VoxelRenderers>()) renderers.OnDestroy();
+                foreach (VoxelObjects objects in Object.FindObjectsOfType<VoxelObjects>()) objects.OnDestroy();
+                foreach (VoxelTerrain terrain in Object.FindObjectsOfType<VoxelTerrain>()) terrain.OnDestroy();
+                foreach (VoxelRenderParams renderParams in terrainRenderParams.Values) renderParams.Dispose();
+                objectsRenderParams?.Dispose();
+            };
+            AssemblyReloadEvents.afterAssemblyReload += () => {
+                foreach (VoxelRenderers renderers in Object.FindObjectsOfType<VoxelRenderers>()) renderers.Awake();
+                foreach (VoxelObjects objects in Object.FindObjectsOfType<VoxelObjects>()) objects.Awake();
+            };
         }
 
 
         private static void EditorRender(SceneView view) {
-            // Init singletons
-            if (!VoxelRenderers.Instance) {
-                if (voxels) voxels.Dispose();
-                voxels = Object.FindObjectOfType<VoxelRenderers>();
-                if (!voxels) return;
-                voxels.Init();
-            }
-
             Camera sceneCamera = SceneView.currentDrawingSceneView.camera;
             RenderTerrains(sceneCamera);
+            RenderObjects(sceneCamera);
         }
 
 
@@ -42,25 +39,58 @@ namespace Voxels.Editor {
             VoxelTerrain[] terrains = Object.FindObjectsOfType<VoxelTerrain>();
             foreach (VoxelTerrain terrain in terrains) {
                 if (!terrain.Created) continue;
-                if (!renderParams.ContainsKey(terrain)) {
-                    renderParams[terrain] = new(
+                if (!terrainRenderParams.TryGetValue(terrain, out VoxelRenderParams renderParams)) {
+                    renderParams = new(
                         sceneCamera, VoxelRenderers.Instance.terrainMaterial,
                         terrain.meshesBuffer, terrain.facesBuffer, terrain.colorsBuffer
                     );
+                    terrainRenderParams[terrain] = renderParams;
                 }
-                VoxelRenderParams renderParam = renderParams[terrain];
+                if (terrain.meshesBuffer != renderParams.MeshesBuffer) {
+                    renderParams.MeshesBuffer = terrain.meshesBuffer;
+                    renderParams.FacesBuffer = terrain.facesBuffer;
+                    renderParams.ColorsBuffer = terrain.colorsBuffer;
+                }
 
                 SceneRender render = SceneRender.Get(terrain);
                 if (render.mode == SceneRender.Mode.None) continue;
                 if (render.mode == SceneRender.Mode.All) {
-                    renderParam.Cull(sceneCamera, VoxelRenderers.Instance.terrainCulling);
+                    renderParams.Cull(sceneCamera, VoxelRenderers.Instance.terrainCulling, VoxelRenderers.terrainCullingGroupSize);
                 }
                 else {
-                    VoxelTerrainRenderer terrainRenderer = (VoxelTerrainRenderer)render.renderer;
-                    renderParam.Cull(terrainRenderer.target, VoxelRenderers.Instance.terrainCulling);
+                    VoxelTerrainRenderer renderer = (VoxelTerrainRenderer)render.renderer;
+                    renderParams.Cull(renderer.target, VoxelRenderers.Instance.terrainCulling, VoxelRenderers.terrainCullingGroupSize);
                 }
-                renderParam.Render();
+                renderParams.Render();
             }
+        }
+
+
+        private static void RenderObjects(Camera sceneCamera) {
+            VoxelObjects objects = VoxelObjects.Instance;
+            if (!objects) return;
+            if (objects.InstanceCount == 0) return;
+            objectsRenderParams ??= new(
+                sceneCamera, VoxelRenderers.Instance.objectsMaterial,
+                objects.MeshesBuffer, objects.FacesBuffer, objects.ColorsBuffer, objects.TransformsBuffer
+            );
+            if (objects.MeshesBuffer != objectsRenderParams.MeshesBuffer) {
+                objectsRenderParams.MeshesBuffer = objects.MeshesBuffer;
+                objectsRenderParams.FacesBuffer = objects.FacesBuffer;
+                objectsRenderParams.ColorsBuffer = objects.ColorsBuffer;
+                objectsRenderParams.TransformsBuffer = objects.TransformsBuffer;
+            }
+
+            SceneRender render = SceneRender.Get(objects);
+            if (render.mode == SceneRender.Mode.None) return;
+            if (render.mode == SceneRender.Mode.All) {
+                objectsRenderParams.Cull(sceneCamera, VoxelRenderers.Instance.objectsCulling);
+            }
+            else {
+                VoxelObjectRenderer renderer = (VoxelObjectRenderer)render.renderer;
+                objectsRenderParams.Cull(renderer.target, VoxelRenderers.Instance.objectsCulling);
+            }
+            objectsRenderParams.Render();
         }
     }
 

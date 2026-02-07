@@ -1,18 +1,31 @@
+#ifndef VOXEL_STRUCTS_CGINC
+#define VOXEL_STRUCTS_CGINC
+
+#include "UnityCG.cginc"
+
+// C equivalent of VoxelStructs.cs
+
 struct VoxelMesh {
     float3 center;
     float3 size;
     float3 position;
-    uint data1; // normal (3b), faceCount (29b)
+    uint data1;
     uint startFace;
 };
 
 #define MESH_NORMAL(mesh) ((mesh).data1 & 7)
 #define MESH_COUNT(mesh) ((mesh).data1 >> 3)
 
+struct ObjectMesh {
+    VoxelMesh mesh;
+    uint startColor;
+    uint startInstance;
+};
+
 
 struct VoxelFace {
-    uint data1; // x (10b), y (10b), z (10b)
-    uint data2; // width (6b), height (6b), normal (3b), color (16b)
+    uint data1;
+    uint data2;
 };
 
 #define FACE_XYZ(face) uint3((face).data1 & 0x3FFu, (face).data1 >> 10 & 0x3FFu, (face).data1 >> 20)
@@ -27,9 +40,29 @@ struct VoxelFace {
 #define NORMAL_SIGN(normal) (2 * int(NORMAL_POSITIVE(normal)) - 1)
 #define NORMAL_AXIS(normal) ((normal) >> 1)
 #define NORMAL_ANY 6
+#define AXIS_WIDTH(axis) (1u & ~(axis))
+#define AXIS_HEIGHT(axis) (2u & ~(axis))
+
+
+float3 getNormal(uint normalID) {
+    float normalArr[] = { 0, 0, 0 };
+    normalArr[NORMAL_AXIS(normalID)] = NORMAL_SIGN(normalID);
+    return float3(normalArr[0], normalArr[1], normalArr[2]);
+}
+
+fixed4 getColor(uint color32) {
+    return fixed4(
+        (color32 & 0xFF) / 255.0,
+        ((color32 >> 8) & 0xFF) / 255.0,
+        ((color32 >> 16) & 0xFF) / 255.0,
+        ((color32 >> 24) & 0xFF) / 255.0
+    );
+}
 
 
 struct CommandOffset {
     float3 position;
     uint color;
 };
+
+#endif

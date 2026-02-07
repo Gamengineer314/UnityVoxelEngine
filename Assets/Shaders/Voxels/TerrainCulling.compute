@@ -2,15 +2,17 @@
 
 #include "VoxelStructs.cginc"
 
+
 uniform float4 cameraFarPlane; // x,y,z: normal, w: distance
 uniform float4 cameraLeftPlane;
 uniform float4 cameraRightPlane;
 uniform float4 cameraDownPlane;
 uniform float4 cameraUpPlane;
 uniform float4 cameraPosition; // x,y,z: position
+
 StructuredBuffer<VoxelMesh> meshes; // All meshes information (position, size, squares indices)
 RWByteAddressBuffer commands; // Indirect arguments
-RWStructuredBuffer<CommandOffset> offsets;
+RWStructuredBuffer<CommandOffset> offsets; // Position offsets
 
 
 bool outsidePlane(float3 center, float3 size, float4 plane) {
@@ -32,24 +34,18 @@ bool boundsCulling(float3 center, float3 size) { // Ignore meshes outside of cam
 
 bool normalCulling(float3 center, float3 size, uint normalID) { // Ignore meshes that are invisible because of their normal
     if (normalID == NORMAL_ANY) return true;
-    float normalArr[3] = { 0, 0, 0 };
-    normalArr[NORMAL_AXIS(normalID)] = NORMAL_SIGN(normalID);
-    float3 normal = float3(normalArr[0], normalArr[1], normalArr[2]);
+    float3 normal = getNormal(normalID);
     return dot(center - normal * size - cameraPosition.xyz, normal) <= 0;
 }
 
 
 [numthreads(64,1,1)]
-void pickMeshes(uint3 id : SV_DispatchThreadID) { // id.x : id of the mesh
+void pickMeshes(uint3 id : SV_DispatchThreadID) {
     VoxelMesh mesh = meshes[id.x];
-    uint normalID = MESH_NORMAL(mesh);
-    uint faceCount = MESH_COUNT(mesh);
-    uint startFace = mesh.startFace;
-    
-    if (faceCount > 0 && normalCulling(mesh.center, mesh.size, normalID) && boundsCulling(mesh.center, mesh.size)) {
+    if (MESH_COUNT(mesh) > 0 && normalCulling(mesh.center, mesh.size, MESH_NORMAL(mesh)) && boundsCulling(mesh.center, mesh.size)) {
         uint index = offsets.IncrementCounter();
-        commands.Store(index * 20, faceCount * 6); // indexCountPerInstance
-        commands.Store(index * 20 + 12, startFace * 4); // baseVertexIndex
+        commands.Store(index * 20, MESH_COUNT(mesh) * 6); // indexCountPerInstance
+        commands.Store(index * 20 + 12, mesh.startFace * 4); // baseVertexIndex
         offsets[index].position = mesh.position;
     }
 }

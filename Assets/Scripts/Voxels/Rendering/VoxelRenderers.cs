@@ -6,21 +6,25 @@ namespace Voxels.Rendering {
     /// <summary>
     /// Voxel renderers global data
     /// </summary>
+    [ExecuteInEditMode]
     public class VoxelRenderers : MonoBehaviour {
-        internal const int cullingGroupSize = 64;
+        internal const int terrainCullingGroupSize = 64;
         internal const int maxFaceCount = 16384;
 
         internal static VoxelRenderers Instance { get; private set; }
 
         [SerializeField] internal Material terrainMaterial;
+        [SerializeField] internal Material objectsMaterial;
         [SerializeField] internal ComputeShader terrainCulling;
+        [SerializeField] internal ComputeShader objectsCulling;
         [SerializeField] private float quadsInterleaving = 0.05f; // Remove 1 pixel gaps between triangles
 
         public float QuadsInterleaving {
             get => quadsInterleaving;
             set {
                 quadsInterleaving = value;
-                terrainMaterial.SetFloat("quadsInterleaving", quadsInterleaving);
+                if (terrainMaterial) terrainMaterial.SetFloat(quadsInterleavingId, quadsInterleaving);
+                if (objectsMaterial) objectsMaterial.SetFloat(quadsInterleavingId, quadsInterleaving);
             }
         }
 
@@ -29,6 +33,7 @@ namespace Voxels.Rendering {
         internal GraphicsBuffer counterBuffer { get; private set; } // Buffer to store a counter
 
         // Shader IDs
+        private readonly int quadsInterleavingId = Shader.PropertyToID("quadsInterleaving");
         internal readonly int cameraPositionId = Shader.PropertyToID("cameraPosition");
         internal readonly int cameraFarPlaneId = Shader.PropertyToID("cameraFarPlane");
         internal readonly int cameraLeftPlaneId = Shader.PropertyToID("cameraLeftPlane");
@@ -40,21 +45,11 @@ namespace Voxels.Rendering {
         internal readonly int colorsId = Shader.PropertyToID("colors");
         internal readonly int commandsId = Shader.PropertyToID("commands");
         internal readonly int offsetsId = Shader.PropertyToID("offsets");
+        internal readonly int transformsId = Shader.PropertyToID("transforms");
+        internal readonly int renderedTransformsId = Shader.PropertyToID("renderedTransforms");
 
 
-        private void Awake() {
-            if (!Instance) Init();
-        }
-
-        private void OnDestroy() {
-            if (Instance == this) Dispose();
-        }
-
-
-        /// <summary>
-        /// Initialize global data
-        /// </summary>
-        internal void Init() {
+        internal void Awake() {
             Instance = this;
 
             ushort[] indices = new ushort[98304];
@@ -68,17 +63,14 @@ namespace Voxels.Rendering {
             }
             indicesBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Index, indices.Length, sizeof(ushort));
             indicesBuffer.SetData(indices);
-            counterBuffer = new(GraphicsBuffer.Target.Raw, 1, sizeof(uint));
+            counterBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Raw, 1, sizeof(uint));
 
-            terrainMaterial.SetFloat("quadsInterleaving", quadsInterleaving);
+            QuadsInterleaving = quadsInterleaving;
             terrainMaterial.SetFloat("seed", Random.value);
         }
 
 
-        /// <summary>
-        /// Dispose global data
-        /// </summary>
-        internal void Dispose() {
+        internal void OnDestroy() {
             indicesBuffer.Dispose();
             counterBuffer.Dispose();
         }

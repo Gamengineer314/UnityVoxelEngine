@@ -1,0 +1,62 @@
+#pragma kernel pickMeshes
+
+#include "UnityCG.cginc"
+#include "VoxelStructs.cginc"
+
+
+uniform float4 cameraFarPlane; // x,y,z: normal, w: distance
+uniform float4 cameraLeftPlane;
+uniform float4 cameraRightPlane;
+uniform float4 cameraDownPlane;
+uniform float4 cameraUpPlane;
+uniform float4 cameraPosition; // x,y,z: position
+
+StructuredBuffer<ObjectMesh> meshes; // All meshes information (position, size, squares indices)
+RWByteAddressBuffer commands; // Indirect arguments
+RWStructuredBuffer<CommandOffset> offsets; // Position and color offsets
+StructuredBuffer<float4x4> transforms; // Transform of each instance
+RWStructuredBuffer<float4x4> renderedTransforms; // Transform of each rendered instance
+
+
+bool outsidePlane(float3 center, float3 size, float4 plane, float4x4 transform) {
+    float3 normalSign = sign(mul(float4(plane.xyz, 0), transform).xyz);
+    float3 closestPoint = mul(transform, float4(center + size * normalSign, 1)).xyz;
+    return dot(closestPoint, plane.xyz) + plane.w < 0;
+}
+
+
+bool boundsCulling(float3 center, float3 size, float4x4 transform) { // Ignore meshes outside of camera view
+    if (outsidePlane(center, size, cameraFarPlane, transform)) return false;
+    if (outsidePlane(center, size, cameraLeftPlane, transform)) return false;
+    if (outsidePlane(center, size, cameraRightPlane, transform)) return false;
+    if (outsidePlane(center, size, cameraUpPlane, transform)) return false;
+    if (outsidePlane(center, size, cameraDownPlane, transform)) return false;
+    return true;
+}
+
+
+bool normalCulling(float3 center, float3 size, uint normalID, float4x4 transform) { // Ignore meshes that are invisible because of their normal
+    if (normalID == NORMAL_ANY) return true;
+    float3 normal = getNormal(normalID);
+    return dot(
+        mul(transform, float4(center - normal * size, 1)).xyz - cameraPosition.xyz,
+        mul(transform, float4(normal, 0)).xyz
+    ) <= 0;
+}
+
+
+[numthreads(1,1,1)]
+void pickMeshes(uint3 id : SV_DispatchThreadID) {
+    ObjectMesh objMesh = meshes[id.x];
+    VoxelMesh mesh = objMesh.mesh;
+    float4x4 transform = transforms[objMesh.startInstance];
+    if (normalCulling(mesh.center, mesh.size, MESH_NORMAL(mesh), transform) && boundsCulling(mesh.center, mesh.size, transform)) {
+        uint index = offsets.IncrementCounter();
+        commands.Store(index * 20, MESH_COUNT(mesh) * 6); // indexCountPerInstance
+        commands.Store(index * 20 + 12, mesh.startFace * 4); // baseVertexIndex
+        commands.Store(index * 20 + 16, objMesh.startInstance); // startInstance
+        offsets[index].position = mesh.position;
+        offsets[index].color = objMesh.startColor;
+        renderedTransforms[objMesh.startInstance] = transform;
+    }
+}

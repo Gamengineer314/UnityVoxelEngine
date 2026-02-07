@@ -35,11 +35,8 @@ namespace Voxels.Rendering {
             }
         }
 
-        private void OnDestroy() {
-            Dispose();
-        }
 
-        internal void Dispose() {
+        internal void OnDestroy() {
             if (Created) {
                 facesBuffer.Dispose();
                 meshesBuffer.Dispose();
@@ -47,7 +44,6 @@ namespace Voxels.Rendering {
             }
             else if (generating) {
                 generator.Complete();
-                generator.DisposeJobs();
                 generator.Dispose();
                 generating = false;
             }
@@ -74,7 +70,7 @@ namespace Voxels.Rendering {
 
         private unsafe void FinishGenerate() {
             generator.Complete();
-            int ceiledMeshes = VoxelRenderers.cullingGroupSize * Mathf.CeilToInt((float)generator.Meshes.Length / VoxelRenderers.cullingGroupSize);
+            int ceiledMeshes = VoxelRenderers.terrainCullingGroupSize * Mathf.CeilToInt((float)generator.Meshes.Length / VoxelRenderers.terrainCullingGroupSize);
             facesBuffer = new(GraphicsBuffer.Target.Structured, generator.Faces.Length, sizeof(VoxelFace));
             facesBuffer.SetData(generator.Faces);
             meshesBuffer = new(GraphicsBuffer.Target.Structured, ceiledMeshes, sizeof(VoxelMesh));
@@ -83,7 +79,6 @@ namespace Voxels.Rendering {
             if (additional > 0) meshesBuffer.SetData(new VoxelMesh[additional], 0, generator.Meshes.Length, additional);
             colorsBuffer = new(GraphicsBuffer.Target.Structured, generator.Colors.Length, sizeof(Color32));
             colorsBuffer.SetData(generator.Colors);
-            generator.DisposeJobs();
             generator.Dispose();
             generating = false;
         }

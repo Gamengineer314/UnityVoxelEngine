@@ -17,7 +17,7 @@ namespace Voxels.Rendering {
                 );
             }
             if (Rendering) {
-                renderParams.Cull(target, VoxelRenderers.Instance.terrainCulling);
+                renderParams.Cull(target, VoxelRenderers.Instance.terrainCulling, VoxelRenderers.terrainCullingGroupSize);
                 renderParams.Render();
             }
         }

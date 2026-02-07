@@ -61,13 +61,19 @@ namespace Voxels.Rendering {
     internal readonly struct ObjectMesh {
         public readonly VoxelMesh mesh;
         private readonly uint startColor;
+        private readonly uint startInstance;
 
-        public ObjectMesh(float3 center, float3 size, float3 position, VoxelNormal normal, int faceCount, int startFace, int startColor) {
+        public ObjectMesh(
+            float3 center, float3 size, float3 position, VoxelNormal normal, int faceCount, int startFace,
+            int startColor, int startInstance
+        ) {
             mesh = new(center, size, position, normal, faceCount, startFace);
             this.startColor = (uint)startColor;
+            this.startInstance = (uint)startInstance;
         }
 
         public int StartColor => (int)startColor;
+        public int StartInstance => (int)startInstance;
     }
     
     

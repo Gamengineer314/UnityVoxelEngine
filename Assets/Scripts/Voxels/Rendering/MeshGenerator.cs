@@ -29,7 +29,6 @@ namespace Voxels.Rendering {
         public bool IsCompleted => handle.IsCompleted;
         public int JobCount => handles.Array.Length;
         public int CompletedCount => handles.Array.Count(h => h.IsCompleted);
-        public void Complete() => handle.Complete();
 
 
         /// <summary>
@@ -41,7 +40,7 @@ namespace Voxels.Rendering {
         /// <param name="meshSize">
         /// Max size for individual meshes.
         /// Multiple meshes can be generated from the same voxel collection if it exceeds this size.
-        /// The generator will perform best if [maxHorizontalSize] is a multiple of 64.
+        /// The generator will perform best if [meshSize] is a multiple of 64.
         /// </param>
         /// <param name="mergeNormalsThreshold">
         /// Number of faces below which meshes at the same position with different normals must be merged together.
@@ -50,34 +49,23 @@ namespace Voxels.Rendering {
         /// <param name="jobHorizontalSize">
         /// Max horizontal size a generator job can process.
         /// Multiple jobs will be used to generate the meshes in parallel if a voxel collection exceeds this size.
-        /// The generator will perform best if [jobHorizontalSize] is a multiple of [maxHorizontalSize]
+        /// The generator will perform best if [jobHorizontalSize] is a multiple of [meshSize]
         /// </param>
         /// <param name="seenFromAbove">
         /// Whether objects can only be seen from above and inside its horizontal bounds.
         /// This allows to remove faces below the objects and on their sides.
         /// </param>
-        public MeshGenerator(int meshSize = 64, int mergeNormalsThreshold = 256, int jobHorizontalSize = int.MaxValue, bool seenFromAbove = false) {
+        protected MeshGenerator(Result result, int meshSize = 64, int mergeNormalsThreshold = 256, int jobHorizontalSize = int.MaxValue, bool seenFromAbove = false) {
             if (meshSize > VoxelFace.maxSize) throw new ArgumentException($"Mesh size can't exceed {VoxelFace.maxSize}", nameof(meshSize));
             if (mergeNormalsThreshold > VoxelRenderers.maxFaceCount) mergeNormalsThreshold = VoxelRenderers.maxFaceCount;
             this.meshSize = meshSize;
             this.mergeNormalsThreshold = mergeNormalsThreshold;
             this.jobHorizontalSize = jobHorizontalSize;
             this.seenFromAbove = seenFromAbove;
-            result = default;
-            result.Init();
+            this.result = result;
+            this.result.Init();
         }
-        
-        /// <summary>
-        /// Dispose generation jobs.
-        /// Must be called after each generation.
-        /// </summary>
-        public void DisposeJobs() {
-            foreach (Generator generator in generators) {
-                generator.Dispose();
-            }
-            generators.Dispose();
-            handles.Dispose();
-        }
+
 
         /// <summary>
         /// Dispose the result
@@ -90,13 +78,25 @@ namespace Voxels.Rendering {
         /// <param name="keepOffsets">Whether to keep the lengths for future generations</param>
         public void Clear(bool keepOffsets = false) => result.Clear(keepOffsets);
 
+        /// <summary>
+        /// Complete generation and dispose generation jobs
+        /// </summary>
+        public void Complete() {
+            handle.Complete();
+            foreach (Generator generator in generators) {
+                generator.Dispose();
+            }
+            generators.Dispose();
+            handles.Dispose();
+        }
+
 
         /// <summary>
         /// Generate meshes from a voxel collection
         /// </summary>
         /// <param name="voxels">The voxels</param>
         /// <param name="offset">Offset to add to the positions</param>
-        public void Generate(VoxelColumns voxels, float3 offset) {
+        protected void Generate(VoxelColumns voxels, float3 offset, Generator generator) {
             int nJobsX = (int)math.ceil((float)voxels.sizeX / jobHorizontalSize);
             int nJobsZ = (int)math.ceil((float)voxels.sizeZ / jobHorizontalSize);
             generators = new Unsafe2DArray<Generator>(nJobsX, nJobsZ, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
@@ -105,14 +105,14 @@ namespace Voxels.Rendering {
             // Create jobs
             for (int jobZ = 0; jobZ < nJobsZ; jobZ++) {
                 for (int jobX = 0; jobX < nJobsX; jobX++) {
-                    Generator generator = default;
-                    generator.Init();
-                    generators[jobX, jobZ] = generator;
+                    Generator copy = generator;
+                    copy.Init();
+                    generators[jobX, jobZ] = copy;
                     int jobStartX = jobX * jobHorizontalSize;
                     int jobStartZ = jobZ * jobHorizontalSize;
                     int jobSizeX = math.min(jobHorizontalSize, voxels.sizeX - jobStartX);
                     int jobSizeZ = math.min(jobHorizontalSize, voxels.sizeZ - jobStartZ);
-                    GeneratorJob job = new(voxels, jobStartX, jobStartZ, jobSizeX, jobSizeZ, offset, meshSize, mergeNormalsThreshold, seenFromAbove, generators[jobX, jobZ]);
+                    GeneratorJob job = new(voxels, jobStartX, jobStartZ, jobSizeX, jobSizeZ, offset, meshSize, mergeNormalsThreshold, seenFromAbove, copy);
                     handles[jobX, jobZ] = job.Schedule();
                 }
             }
@@ -576,11 +576,9 @@ namespace Voxels.Rendering {
 
 
     internal class TerrainMeshGenerator : MeshGenerator<TerrainMeshGenerator.Generator, TerrainMeshGenerator.Result> {
-        public TerrainMeshGenerator(
-            int maxHorizontalSize = 64,
-            int mergeNormalsThreshold = 256,
-            int jobHorizontalSize = int.MaxValue
-        ) : base(maxHorizontalSize, mergeNormalsThreshold, jobHorizontalSize, true) {}
+        public TerrainMeshGenerator(int meshSize = 64, int mergeNormalsThreshold = 256, int jobHorizontalSize = int.MaxValue) :
+            base(default, meshSize, mergeNormalsThreshold, jobHorizontalSize, true) {}
+        public void Generate(VoxelColumns voxels, float3 offset) => Generate(voxels, offset, default);
 
 
         internal struct Data {
@@ -618,7 +616,8 @@ namespace Voxels.Rendering {
                 Color32 color = voxels.GetVoxel(pos);
                 uint id = Identifiers.ColorToId(color);
                 if (!data.colorIndices.TryGetValue(id, out int index)) {
-                    data.colorIndices[id] = data.colors.Length;
+                    index = data.colors.Length;
+                    data.colorIndices[id] = index;
                     data.colors.Add(color);
                 }
                 data.faces.Add(new VoxelFace(pos - meshStart, width, height, normal, index));
@@ -694,6 +693,123 @@ namespace Voxels.Rendering {
 
         public NativeArray<VoxelFace> Faces => result.data.faces.AsArray();
         public NativeArray<VoxelMesh> Meshes => result.data.meshes.AsArray();
+        public NativeArray<Color32> Colors => result.data.colors.AsArray();
+    }
+
+
+
+    internal class ObjectMeshGenerator : MeshGenerator<ObjectMeshGenerator.Generator, ObjectMeshGenerator.Result> {
+        public ObjectMeshGenerator(int meshSize = 64, int mergeNormalsThreshold = 256, int jobHorizontalSize = int.MaxValue) :
+            base(default, meshSize, mergeNormalsThreshold, jobHorizontalSize, false) {}
+
+        public void Generate(VoxelColumns voxels, float3 offset, int startInstance)
+            => Generate(voxels, offset, new Generator() { startInstance = startInstance });
+
+
+        internal struct Data {
+            public NativeList<VoxelFace> faces;
+            public NativeList<ObjectMesh> meshes;
+            public NativeList<Color32> colors;
+
+            public void Init() {
+                faces = new(Allocator.Persistent);
+                meshes = new(Allocator.Persistent);
+                colors = new(Allocator.Persistent);
+            }
+
+            public void Dispose() {
+                faces.Dispose();
+                meshes.Dispose();
+                colors.Dispose();
+            }
+        }
+
+
+        internal struct Generator : IMeshGenerator {
+            [NativeDisableContainerSafetyRestriction] public Data data;
+            private int3 meshStart;
+            private int startColor;
+            public int startInstance;
+
+            public void Init() => data.Init();
+            public void Dispose() => data.Dispose();
+            public readonly uint MergeIdentifier(Color32 voxel) => 0;
+
+            public void StartMesh(int3 meshStart) {
+                this.meshStart = meshStart;
+                startColor = data.colors.Length;
+            }
+
+            public bool AddFace(VoxelColumns voxels, int3 pos, int width, int height, VoxelNormal normal) {
+                if (data.colors.Length - startColor + width * height - 1 > VoxelFace.maxColor) return false;
+                data.faces.Add(new VoxelFace(pos - meshStart, width, height, normal, data.colors.Length - startColor));
+                for (int x = 0; x < width; x++) {
+                    for (int y = 0; y < height; y++) {
+                        int3 texturePos = pos;
+                        texturePos[VoxelNormals.WidthAxis(normal)] += x;
+                        texturePos[VoxelNormals.HeightAxis(normal)] += y;
+                        data.colors.Add(voxels.GetVoxel(texturePos));
+                    }
+                }
+                return true;
+            }
+
+            public void AddMesh(float3 offset, float3 center, float3 size, VoxelNormal normal, int startFace, int faceCount)
+                => data.meshes.Add(new ObjectMesh(center, size, offset + meshStart, normal, faceCount, startFace, startColor, startInstance));
+        }
+
+
+        internal struct Result : IMeshResult<Generator> {
+            public Data data;
+            private int startFace;
+            private int startColor;
+
+            public void Init() => data.Init();
+            public void Dispose() => data.Dispose();
+
+            public void Clear(bool keepOffsets) {
+                if (!keepOffsets) {
+                    startFace = 0;
+                    startColor = 0;
+                }
+                data.faces.Clear();
+                data.meshes.Clear();
+                data.colors.Clear();
+            }
+
+            public void Add(UnsafeArray<Generator> generators) {
+                // Increase capacity
+                int addedFaces = 0;
+                int addedMeshes = 0;
+                int addedColors = 0;
+                foreach (Generator generator in generators) {
+                    addedFaces += generator.data.faces.Length;
+                    addedMeshes += generator.data.meshes.Length;
+                    addedColors += generator.data.colors.Length;
+                }
+                data.faces.Capacity = data.faces.Length + addedFaces;
+                data.meshes.Capacity = data.meshes.Length + addedMeshes;
+                data.colors.Capacity = data.meshes.Length + addedColors;
+
+                // Add faces and colors and add and modify meshes
+                foreach (Generator generator in generators) {
+                    data.faces.AddRange(generator.data.faces.AsArray());
+                    data.colors.AddRange(generator.data.colors.AsArray());
+                    foreach (ObjectMesh mesh in generator.data.meshes) {
+                        data.meshes.Add(new ObjectMesh(
+                            mesh.mesh.center, mesh.mesh.size, mesh.mesh.position, mesh.mesh.Normal, mesh.mesh.FaceCount,
+                            mesh.mesh.StartFace + startFace, mesh.StartColor + startColor, mesh.StartInstance
+                        ));
+                    }
+                    startFace = data.faces.Length;
+                    startColor = data.colors.Length;
+                }
+            }
+        }
+
+
+        public NativeArray<VoxelFace> Faces => result.data.faces.AsArray();
+        public NativeArray<ObjectMesh> Meshes => result.data.meshes.AsArray();
         public NativeArray<Color32> Colors => result.data.colors.AsArray();
     }
 

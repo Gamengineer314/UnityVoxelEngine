@@ -7,13 +7,13 @@ Material:
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_Name: VoxelMaterial
-  m_Shader: {fileID: 4800000, guid: 07ced6bbdb7a6ff46a813337b3485472, type: 3}
+  m_Name: VoxelObjects
+  m_Shader: {fileID: 4800000, guid: e546f6b1668f8be899e1cf768d213aca, type: 3}
   m_Parent: {fileID: 0}
   m_ModifiedSerializedProperties: 0
-  m_ValidKeywords: []
-  m_InvalidKeywords:
-  - _TYPE_TERRAIN
+  m_ValidKeywords:
+  - TYPE_OBJECTS
+  m_InvalidKeywords: []
   m_LightmapFlags: 4
   m_EnableInstancingVariants: 0
   m_DoubleSidedGI: 0
@@ -26,6 +26,6 @@ Material:
     m_TexEnvs: []
     m_Ints: []
     m_Floats:
-    - _Type: 0
+    - Type: 1
     m_Colors: []
   m_BuildTextureStacks: []
