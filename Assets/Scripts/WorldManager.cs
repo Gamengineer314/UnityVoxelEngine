@@ -9,9 +9,8 @@ public class WorldManager : MonoBehaviour {
     public const int chunkSize = 64; // Size of a chunk in all dimensions
     public const int horizontalChunks = horizontalSize / chunkSize; // Number of chunks in x and z dimensions
 
-    public TerrainGenerator terrainGenerator;
-    public VoxelTerrainRenderer terrainRenderer;
-    public VoxelTerrain terrain;
+    [SerializeField] private TerrainGenerator terrainGenerator;
+    [SerializeField] private VoxelObject terrain; 
 
 
     private void Start() {
@@ -22,8 +21,10 @@ public class WorldManager : MonoBehaviour {
 
         // Generate mesh
         watch.Restart();
-        terrain.voxels = voxels;
-        terrain.CompleteGenerate();
+        terrain.SetVoxels(voxels, Vector3.zero);
+        terrain.Complete();
+        voxels.Dispose();
+        
         Debug.Log($"Mesh generated in {watch.ElapsedMilliseconds} ms");
     }
 }

@@ -43,7 +43,7 @@ namespace Voxels.Collections {
         }
 
 
-        public readonly ref T this[int index] {
+        public ref T this[int index] {
             get {
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
                 if (index < 0 || index >= length) throw new IndexOutOfRangeException($"Index {index} is out of range of UnsafeArray of size {length}");

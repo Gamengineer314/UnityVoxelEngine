@@ -50,30 +50,15 @@ namespace Voxels.Collections {
         }
 
 
-        public T[] GetData(int start, int count) {
-            T[] data = new T[count];
-            buffer.GetData(data, 0, start, count);
-            return data;
-        }
-
-        public void SetData(T[] data, int start, int count) => buffer.SetData(data, 0, start, count);
-        public void SetData(NativeArray<T> data, int start, int count) => buffer.SetData(data, 0, start, count);
-
         public T[] this[Range range] {
-            get {
-                int start = range.Start.IsFromEnd ? length - range.Start.Value : range.Start.Value;
-                int end = range.End.IsFromEnd ? length - range.End.Value : range.End.Value;
-                return GetData(start, end - start);
-            }
             set {
                 int start = range.Start.IsFromEnd ? length - range.Start.Value : range.Start.Value;
                 int end = range.End.IsFromEnd ? length - range.End.Value : range.End.Value;
-                SetData(value, start, end - start);
+                buffer.SetData(value, 0, start, end - start);
             }
         }
 
         public T this[int index] {
-            get => this[index..(index+1)][0];
             set => this[index..(index+1)] = new T[] { value };
         }
 

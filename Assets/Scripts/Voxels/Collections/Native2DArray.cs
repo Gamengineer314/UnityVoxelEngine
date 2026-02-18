@@ -23,7 +23,7 @@ namespace Voxels.Collections {
         public void Dispose() => array.Dispose();
 
         public T this[int x, int y] {
-            get {
+            readonly get {
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
                 if (x < 0 || x >= sizeX) throw new IndexOutOfRangeException($"X coordinate {x} is out of range of Native2DArray of sizeX {sizeX}");
                 if (y < 0 || y >= sizeY) throw new IndexOutOfRangeException($"Y coordinate {y} is out of range of Native2DArray of sizeY {sizeY}");
@@ -40,7 +40,7 @@ namespace Voxels.Collections {
         }
 
         public T this[int2 coords] {
-            get => this[coords.x, coords.y];
+            readonly get => this[coords.x, coords.y];
             set => this[coords.x, coords.y] = value;
         }
 

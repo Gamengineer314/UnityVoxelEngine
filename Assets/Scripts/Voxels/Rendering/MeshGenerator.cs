@@ -1,12 +1,12 @@
 using System;
+using System.Linq;
 using UnityEngine;
 using Unity.Collections;
+using Unity.Collections.LowLevel.Unsafe;
 using Unity.Mathematics;
 using Unity.Burst;
 using Unity.Jobs;
-using Unity.Collections.LowLevel.Unsafe;
 using Voxels.Collections;
-using System.Linq;
 
 namespace Voxels.Rendering {
 
@@ -57,7 +57,7 @@ namespace Voxels.Rendering {
         /// </param>
         protected MeshGenerator(Result result, int meshSize = 64, int mergeNormalsThreshold = 256, int jobHorizontalSize = int.MaxValue, bool seenFromAbove = false) {
             if (meshSize > VoxelFace.maxSize) throw new ArgumentException($"Mesh size can't exceed {VoxelFace.maxSize}", nameof(meshSize));
-            if (mergeNormalsThreshold > VoxelRenderers.maxFaceCount) mergeNormalsThreshold = VoxelRenderers.maxFaceCount;
+            if (mergeNormalsThreshold > VoxelRenderer.maxFaceCount) mergeNormalsThreshold = VoxelRenderer.maxFaceCount;
             this.meshSize = meshSize;
             this.mergeNormalsThreshold = mergeNormalsThreshold;
             this.jobHorizontalSize = jobHorizontalSize;
@@ -71,12 +71,6 @@ namespace Voxels.Rendering {
         /// Dispose the result
         /// </summary>
         public void Dispose() => result.Dispose();
-
-        /// <summary>
-        /// Clear the result
-        /// </summary>
-        /// <param name="keepOffsets">Whether to keep the lengths for future generations</param>
-        public void Clear(bool keepOffsets = false) => result.Clear(keepOffsets);
 
         /// <summary>
         /// Complete generation and dispose generation jobs
@@ -467,7 +461,7 @@ namespace Voxels.Rendering {
                     generator.StartMesh(currentMeshStart);
 
                     // Add all faces of a mesh
-                    while (faceCount < VoxelRenderers.maxFaceCount) {
+                    while (faceCount < VoxelRenderer.maxFaceCount) {
                         // Next mesh
                         if (faceIndex == meshes[meshIndex].y) { // Next mesh
                             meshIndex += 6;
@@ -565,7 +559,6 @@ namespace Voxels.Rendering {
     internal interface IMeshResult<Generator> where Generator : unmanaged, IMeshGenerator {
         void Init();
         void Dispose();
-        void Clear(bool keepOffsets);
 
         /// <summary>
         /// Add the result of multiple generators
@@ -631,20 +624,9 @@ namespace Voxels.Rendering {
 
         internal struct Result : IMeshResult<Generator> {
             public Data data;
-            private int startFace;
 
             public void Init() => data.Init();
             public void Dispose() => data.Dispose();
-
-            public void Clear(bool keepOffsets) {
-                if (!keepOffsets) {
-                    startFace = 0;
-                    data.colorIndices.Clear();
-                }
-                data.faces.Clear();
-                data.meshes.Clear();
-                data.colors.Clear();
-            }
 
             public void Add(UnsafeArray<Generator> generators) {
                 // Increase capacity
@@ -673,6 +655,7 @@ namespace Voxels.Rendering {
                     if (data.colorIndices.Count > VoxelFace.maxColor) throw new InvalidOperationException($"Number of colors can't exceed {VoxelFace.maxColor}");
 
                     // Modify and add faces and meshes
+                    int startFace = data.faces.Length;
                     foreach (VoxelFace face in generator.data.faces) {
                         data.faces.Add(new VoxelFace(
                             new(face.X, face.Y, face.Z), face.Width, face.Height, face.Normal,
@@ -685,7 +668,6 @@ namespace Voxels.Rendering {
                             mesh.StartFace + startFace
                         ));
                     }
-                    startFace = data.faces.Length;
                 }
             }
         }
@@ -761,21 +743,9 @@ namespace Voxels.Rendering {
 
         internal struct Result : IMeshResult<Generator> {
             public Data data;
-            private int startFace;
-            private int startColor;
 
             public void Init() => data.Init();
             public void Dispose() => data.Dispose();
-
-            public void Clear(bool keepOffsets) {
-                if (!keepOffsets) {
-                    startFace = 0;
-                    startColor = 0;
-                }
-                data.faces.Clear();
-                data.meshes.Clear();
-                data.colors.Clear();
-            }
 
             public void Add(UnsafeArray<Generator> generators) {
                 // Increase capacity
@@ -793,6 +763,8 @@ namespace Voxels.Rendering {
 
                 // Add faces and colors and add and modify meshes
                 foreach (Generator generator in generators) {
+                    int startFace = data.faces.Length;
+                    int startColor = data.colors.Length;
                     data.faces.AddRange(generator.data.faces.AsArray());
                     data.colors.AddRange(generator.data.colors.AsArray());
                     foreach (ObjectMesh mesh in generator.data.meshes) {
@@ -801,8 +773,6 @@ namespace Voxels.Rendering {
                             mesh.mesh.StartFace + startFace, mesh.StartColor + startColor, mesh.StartInstance
                         ));
                     }
-                    startFace = data.faces.Length;
-                    startColor = data.colors.Length;
                 }
             }
         }

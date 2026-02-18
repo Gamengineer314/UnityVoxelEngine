@@ -1,9 +1,9 @@
 using System;
 using System.IO;
-using Unity.Burst;
+using UnityEngine;
 using Unity.Collections;
 using Unity.Mathematics;
-using UnityEngine;
+using Unity.Burst;
 
 namespace Voxels.Collections {
 
@@ -54,7 +54,7 @@ namespace Voxels.Collections {
             startIndices.Dispose();
         }
 
-        public bool Created => voxels.IsCreated;
+        public bool IsCreated => voxels.IsCreated;
 
 
         /// <summary>
