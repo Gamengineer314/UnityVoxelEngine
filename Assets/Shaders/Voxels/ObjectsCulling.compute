@@ -12,7 +12,7 @@ uniform float4 cameraUpPlane;
 uniform float4 cameraPosition; // x,y,z: position
 
 StructuredBuffer<ObjectMesh> meshes; // All meshes information (position, size, squares indices)
-RWByteAddressBuffer commands; // Indirect arguments
+RWBuffer<uint> commands; // Indirect arguments
 RWStructuredBuffer<CommandOffset> offsets; // Position and color offsets
 StructuredBuffer<float4x4> transforms; // Transform of each instance
 RWStructuredBuffer<float4x4> renderedTransforms; // Transform of each rendered instance
@@ -52,9 +52,9 @@ void pickMeshes(uint3 id : SV_DispatchThreadID) {
     float4x4 transform = transforms[objMesh.startInstance];
     if (normalCulling(mesh.center, mesh.size, MESH_NORMAL(mesh), transform) && boundsCulling(mesh.center, mesh.size, transform)) {
         uint index = offsets.IncrementCounter();
-        commands.Store(index * 20, MESH_COUNT(mesh) * 6); // indexCountPerInstance
-        commands.Store(index * 20 + 12, mesh.startFace * 4); // baseVertexIndex
-        commands.Store(index * 20 + 16, objMesh.startInstance); // startInstance
+        commands[index * 5] = MESH_COUNT(mesh) * 6; // indexCountPerInstance
+        commands[index * 5 + 3] = mesh.startFace * 4; // baseVertexIndex
+        commands[index * 5 + 4] = objMesh.startInstance; // startInstance
         offsets[index].position = mesh.position;
         offsets[index].color = objMesh.startColor;
         renderedTransforms[objMesh.startInstance] = transform;

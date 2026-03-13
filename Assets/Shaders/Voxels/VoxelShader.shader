@@ -58,13 +58,15 @@ Shader "Voxels/VoxelShader" {
 
             v2f vert(uint vertexID: SV_VertexID, uint instanceID: SV_InstanceID) {
                 // Get data
+            #if defined(SHADER_API_D3D11)
+                vertexID += unity_IndirectDrawArgs.Load(GetCommandID(0) * 20 + 12);
+            #endif
+            #if defined(TYPE_OBJECTS) && !defined(SHADER_API_VULKAN)
+                instanceID += unity_IndirectDrawArgs.Load(GetCommandID(0) * 20 + 16);
+            #endif
                 VoxelFace face = faces[vertexID >> 2];
                 vertexID &= 3;
                 CommandOffset offset = offsets[GetCommandID(0)];
-            #ifdef TYPE_OBJECTS
-                InitIndirectDrawArgs(0);
-                instanceID = GetIndirectInstanceID_Base(instanceID);
-            #endif
 
                 // Unpack data
                 float3 pos = FACE_XYZ(face) + offset.position;

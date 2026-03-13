@@ -11,7 +11,7 @@ uniform float4 cameraUpPlane;
 uniform float4 cameraPosition; // x,y,z: position
 
 StructuredBuffer<VoxelMesh> meshes; // All meshes information (position, size, squares indices)
-RWByteAddressBuffer commands; // Indirect arguments
+RWBuffer<uint> commands; // Indirect arguments
 RWStructuredBuffer<CommandOffset> offsets; // Position offsets
 
 
@@ -44,8 +44,8 @@ void pickMeshes(uint3 id : SV_DispatchThreadID) {
     VoxelMesh mesh = meshes[id.x];
     if (MESH_COUNT(mesh) > 0 && normalCulling(mesh.center, mesh.size, MESH_NORMAL(mesh)) && boundsCulling(mesh.center, mesh.size)) {
         uint index = offsets.IncrementCounter();
-        commands.Store(index * 20, MESH_COUNT(mesh) * 6); // indexCountPerInstance
-        commands.Store(index * 20 + 12, mesh.startFace * 4); // baseVertexIndex
+        commands[index * 5] = MESH_COUNT(mesh) * 6; // indexCountPerInstance
+        commands[index * 5 + 3] = mesh.startFace * 4; // baseVertexIndex
         offsets[index].position = mesh.position;
     }
 }
