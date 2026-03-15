@@ -11,7 +11,7 @@ uniform float4 cameraUpPlane;
 uniform float4 cameraPosition; // x,y,z: position
 
 StructuredBuffer<VoxelMesh> meshes; // All meshes information (position, size, squares indices)
-RWBuffer<uint> commands; // Indirect arguments
+RWStructuredBuffer<uint> commands; // Indirect arguments
 RWStructuredBuffer<CommandOffset> offsets; // Position offsets
 
 

@@ -40,7 +40,7 @@ namespace Voxels.Rendering {
                 this.meshesBuffer = meshesBuffer;
                 this.meshCount = meshCount;
                 commandsBuffer?.Dispose();
-                commandsBuffer = new(GraphicsBuffer.Target.IndirectArguments, meshesBuffer.count, GraphicsBuffer.IndirectDrawIndexedArgs.size);
+                commandsBuffer = new(GraphicsBuffer.Target.IndirectArguments | GraphicsBuffer.Target.Structured, meshesBuffer.count * 5, sizeof(uint));
                 GraphicsBuffer.IndirectDrawIndexedArgs[] commands = new GraphicsBuffer.IndirectDrawIndexedArgs[meshesBuffer.count];
                 for (int i = 0; i < meshesBuffer.count; i++) commands[i] = new() { instanceCount = 1 };
                 commandsBuffer.SetData(commands);
