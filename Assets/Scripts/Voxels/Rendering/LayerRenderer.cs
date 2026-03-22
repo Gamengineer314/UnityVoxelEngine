@@ -1,4 +1,5 @@
 using UnityEngine;
+using Voxels.Collections;
 
 namespace Voxels.Rendering {
     
@@ -6,21 +7,25 @@ namespace Voxels.Rendering {
     /// Voxel renderer for a layer and a camera
     /// </summary>
     internal abstract class LayerRenderer {
-        private GraphicsBuffer meshesBuffer;
-        private int meshCount;
+        protected GraphicsBuffer meshesBuffer;
         private GraphicsBuffer commandsBuffer;
         private GraphicsBuffer offsetsBuffer;
         protected readonly RenderParams renderParams;
+        protected readonly ComputeShader cullingShader;
+        protected readonly int cullingGroupSize;
         private readonly uint[] count = new uint[1];
 
 
-        internal LayerRenderer(Material material, Camera camera, int layer) {
+        internal LayerRenderer(Material material, ComputeShader cullingShader, Camera camera, int layer) {
             renderParams = new(material) {
                 camera = camera,
                 layer = layer,
                 worldBounds = new(Vector3.zero, new Vector3(float.MaxValue, float.MaxValue, float.MaxValue)),
                 matProps = new()
             };
+            this.cullingShader = cullingShader;
+            cullingShader.GetKernelThreadGroupSizes(0, out uint size, out _, out _);
+            cullingGroupSize = (int)size;
         }
 
 
@@ -33,12 +38,11 @@ namespace Voxels.Rendering {
         /// <summary>
         /// Set the buffers used for culling and rendering
         /// </summary>
-        protected unsafe void SetBuffers(GraphicsBuffer meshesBuffer, int meshCount, GraphicsBuffer facesBuffer, GraphicsBuffer colorsBuffer) {
+        protected unsafe void SetBuffers(GraphicsBuffer meshesBuffer, GraphicsBuffer facesBuffer, GraphicsBuffer colorsBuffer) {
             renderParams.matProps.SetBuffer(ShaderID.faces, facesBuffer);
             renderParams.matProps.SetBuffer(ShaderID.colors, colorsBuffer);
             if (meshesBuffer != this.meshesBuffer) { // Create corresponding commands and offsets buffers
                 this.meshesBuffer = meshesBuffer;
-                this.meshCount = meshCount;
                 commandsBuffer?.Dispose();
                 commandsBuffer = new(GraphicsBuffer.Target.IndirectArguments | GraphicsBuffer.Target.Structured, meshesBuffer.count * 5, sizeof(uint));
                 GraphicsBuffer.IndirectDrawIndexedArgs[] commands = new GraphicsBuffer.IndirectDrawIndexedArgs[meshesBuffer.count];
@@ -54,7 +58,7 @@ namespace Voxels.Rendering {
         /// <summary>
         /// Frustum and back-face culling
         /// </summary>
-        protected void Cull(ComputeShader cullingShader, int groupSize) {
+        internal virtual void Cull() {
             VoxelRenderer renderer = VoxelRenderer.Instance;
 
             // Set camera data
@@ -71,7 +75,7 @@ namespace Voxels.Rendering {
             cullingShader.SetBuffer(0, ShaderID.commands, commandsBuffer);
             cullingShader.SetBuffer(0, ShaderID.offsets, offsetsBuffer);
             offsetsBuffer.SetCounterValue(0);
-            cullingShader.Dispatch(0, meshCount / groupSize, 1, 1);
+            cullingShader.Dispatch(0, meshesBuffer.count / cullingGroupSize, 1, 1);
             GraphicsBuffer.CopyCount(offsetsBuffer, renderer.counterBuffer, 0);
             renderer.counterBuffer.GetData(count);
         }
@@ -91,15 +95,21 @@ namespace Voxels.Rendering {
     /// Voxel terrain renderer for a layer and a camera
     /// </summary>
     internal class TerrainLayerRenderer : LayerRenderer {
-        internal const int terrainCullingGroupSize = 64;
-
         internal TerrainLayerRenderer(Camera camera, int layer) :
-            base(VoxelRenderer.Instance.terrainMaterial, camera, layer) {}
+            base(VoxelRenderer.Instance.terrainMaterial, VoxelRenderer.Instance.terrainCulling, camera, layer) {}
 
-        internal void SetBuffers(VoxelTerrainLayer layer)
-            => SetBuffers(layer.meshesBuffer.buffer, layer.meshesBuffer.Length, layer.facesBuffer.buffer, layer.colorsBuffer.buffer);
-
-        internal void Cull() => Cull(VoxelRenderer.Instance.terrainCulling, terrainCullingGroupSize);
+        internal void SetBuffers(VoxelTerrainLayer layer) {
+            ListBuffer<VoxelMesh> meshesBuffer = layer.meshesBuffer;
+            if (meshesBuffer.buffer != this.meshesBuffer) { // Add zeros until multiple of group size
+                int length = meshesBuffer.Length;
+                int lastGroup = length % cullingGroupSize;
+                if (lastGroup > 0) {
+                    meshesBuffer.AddRange(new VoxelMesh[cullingGroupSize - lastGroup]);
+                    meshesBuffer.Length = length;
+                }
+            }
+            SetBuffers(meshesBuffer.buffer, layer.facesBuffer.buffer, layer.colorsBuffer.buffer);
+        }
     }
 
 
@@ -112,11 +122,11 @@ namespace Voxels.Rendering {
         private GraphicsBuffer renderedTransformsBuffer;
 
         internal ObjectLayerRenderer(Camera camera, int layer) :
-            base(VoxelRenderer.Instance.objectsMaterial, camera, layer) {}
+            base(VoxelRenderer.Instance.objectsMaterial, VoxelRenderer.Instance.objectsCulling, camera, layer) {}
 
         internal void SetBuffers(VoxelObjectLayer layer) {
-            SetBuffers(layer.meshesBuffer.buffer, layer.meshesBuffer.Length, layer.facesBuffer.buffer, layer.colorsBuffer.buffer);
-            if (layer.transformsBuffer.buffer != transformsBuffer) {
+            SetBuffers(layer.meshesBuffer.buffer, layer.facesBuffer.buffer, layer.colorsBuffer.buffer);
+            if (layer.transformsBuffer.buffer != transformsBuffer) { // Transforms buffer
                 transformsBuffer = layer.transformsBuffer.buffer;
                 renderedTransformsBuffer?.Dispose();
                 renderedTransformsBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, transformsBuffer.count, transformsBuffer.stride);
@@ -124,11 +134,10 @@ namespace Voxels.Rendering {
             }
         }
 
-        internal void Cull() {
-            ComputeShader cullingShader = VoxelRenderer.Instance.objectsCulling;
+        internal override void Cull() {
             cullingShader.SetBuffer(0, ShaderID.transforms, transformsBuffer);
             cullingShader.SetBuffer(0, ShaderID.renderedTransforms, renderedTransformsBuffer);
-            Cull(cullingShader, 1);
+            base.Cull();
         }
 
         internal override void Dispose() {

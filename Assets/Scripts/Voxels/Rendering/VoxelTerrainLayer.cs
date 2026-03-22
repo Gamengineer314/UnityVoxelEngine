@@ -122,13 +122,6 @@ namespace Voxels.Rendering {
             meshesBuffer.AddRange(generator.Meshes.GetSubArray(meshesBuffer.Length, generator.Meshes.Length - meshesBuffer.Length));
             facesBuffer.AddRange(generator.Faces.GetSubArray(facesBuffer.Length, generator.Faces.Length - facesBuffer.Length));
             colorsBuffer.AddRange(generator.Colors.GetSubArray(colorsBuffer.Length, generator.Colors.Length - colorsBuffer.Length));
-
-            // Add zeros until multiple of group size
-            int lastGroup = meshesBuffer.Length % TerrainLayerRenderer.terrainCullingGroupSize;
-            if (lastGroup > 0) {
-                meshesBuffer.AddRange(new VoxelMesh[TerrainLayerRenderer.terrainCullingGroupSize - lastGroup]);
-                meshesBuffer.Length = generator.Meshes.Length;
-            }
         }
 
 
