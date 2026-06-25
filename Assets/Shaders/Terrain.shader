@@ -27,7 +27,7 @@ Shader "Voxels/Terrain" {
                 VoxelData v = unpackVertex(vertexID, instanceID);
                 v2f o;
                 o.voxel = voxelVertex(v);
-                o.voxelPos = v.pos - getNormal(v.normalID) * 0.5;
+                o.voxelPos = v.position - getNormal(v.normalID) * 0.5;
                 return o;
             }
 

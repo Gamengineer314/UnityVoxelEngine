@@ -13,7 +13,7 @@ uniform float4 cameraDownPlane;
 uniform float4 cameraUpPlane;
 uniform float4 cameraPosition; // x,y,z: position
 #ifndef VOXEL_INSTANCE
-uniform int nChunks;
+uniform uint nChunks;
 #endif
 
 StructuredBuffer<VoxelChunk> chunks; // Input: chunks

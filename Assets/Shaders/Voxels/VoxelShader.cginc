@@ -38,13 +38,14 @@ uniform float quadsInterleaving; // Remove 1 pixel gaps between triangles
 
 // Unpacked data
 struct VoxelData {
-    float3 pos;
-    uint normalID;
-    uint width;
+    float3 position; // World position
+    uint normalID; // Face normal
+    uint width; // Face size
     uint height;
     uint lightLevel;
+    float3 smoothNormal; // Sum of the normals of both edges of the face
 #ifdef _VOXEL_TEXTURE_ON
-    float2 posInRect;
+    float2 facePosition; // Position in the face
     uint colorIndex;
 #else
     fixed4 color;
@@ -78,7 +79,7 @@ VoxelData unpackVertex(uint vertexID: SV_VertexID, uint instanceID: SV_InstanceI
     CommandOffset offset = offsets[cmd];
 
     // Unpack data
-    float3 pos = FACE_XYZ(face) + offset.position;
+    float3 position = FACE_XYZ(face) + offset.position;
     uint width = FACE_WIDTH(face);
     uint height = FACE_HEIGHT(face);
     uint normalID = FACE_NORMAL(face);
@@ -90,34 +91,38 @@ VoxelData unpackVertex(uint vertexID: SV_VertexID, uint instanceID: SV_InstanceI
     // Position
     uint incWidth = (uint(vertexID) & 1u) ^ uint(normalAxis != 0) ^ NORMAL_NEGATIVE(normalID);
     uint incHeight = vertexID >> 1;
-    float posArr[3] = { pos.x, pos.y, pos.z };
-    posArr[normalAxis] += NORMAL_POSITIVE(normalID);
-    float interleaving = distance(_WorldSpaceCameraPos, pos) * quadsInterleaving * 0.001f;
-    posArr[widthAxis] += -interleaving + incWidth * (width + 2 * interleaving);
-    posArr[heightAxis] += -interleaving + incHeight * (height + 2 * interleaving);
-    pos = float3(posArr[0], posArr[1], posArr[2]);
+    float positionArr[3] = { position.x, position.y, position.z };
+    positionArr[normalAxis] += NORMAL_POSITIVE(normalID);
+    if (incWidth) positionArr[widthAxis] += width;
+    if (incHeight) positionArr[heightAxis] += height;
+    position = float3(positionArr[0], positionArr[1], positionArr[2]);
+
+    // Interleaving
+    float smoothNormalArr[3] = { 0, 0, 0 };
+    smoothNormalArr[widthAxis] = 2 * (float)incWidth - 1;
+    smoothNormalArr[heightAxis] = 2 * (float)incHeight - 1;
+    float3 smoothNormal = float3(smoothNormalArr[0], smoothNormalArr[1], smoothNormalArr[2]);
+
+    // Transform
 #ifdef _VOXEL_TRANSFORM_ON
 #ifdef _VOXEL_INSTANCE_ON
     float4x4 transform = renderedTransforms[instanceID];
 #else
     float4x4 transform = renderedTransforms[cmd];
 #endif
-    pos = mul(transform, float4(pos, 1)).xyz;
-#endif
-#ifdef _VOXEL_TRANSFORM_ON
-    float2 posInRect = 0;
-    if (incWidth) posInRect.x += width;
-    if (incHeight) posInRect.y += height;
+    position = mul(transform, float4(position, 1)).xyz;
+    smoothNormal = mul(transform, float4(smoothNormal, 0)).xyz;
 #endif
 
     VoxelData o;
-    o.pos = pos;
+    o.position = position;
     o.normalID = normalID;
     o.width = width;
     o.height = height;
     o.lightLevel = lightLevels[normalID];
+    o.smoothNormal = smoothNormal;
 #ifdef _VOXEL_TEXTURE_ON
-    o.posInRect = posInRect;
+    o.facePosition = uint2(incWidth, incHeight) * uint2(width, height);
     o.colorIndex = colorID + offset.color;
 #else
     o.color = getColor(colors[colorID]);
@@ -129,15 +134,20 @@ VoxelData unpackVertex(uint vertexID: SV_VertexID, uint instanceID: SV_InstanceI
 // Get vertex to fragment data
 VoxelV2F voxelVertex(VoxelData d) {
     VoxelV2F o;
-    o.vertex = float4(d.pos, 1);
+    o.vertex = float4(d.position, 1);
 #ifdef _VOXEL_TEXTURE_ON
-    o.uv = d.posInRect;
+    o.uv = d.facePosition;
     o.texData = uint3(d.colorIndex, d.width, d.lightLevel);
 #else
     o.color = d.color;
     o.color.xyz *= d.lightLevel / 15.0; // Simple lighting depending on the orientation
 #endif
     o.vertex = mul(UNITY_MATRIX_VP, o.vertex);
+
+    // Interleaving
+    float3 extrude = mul(UNITY_MATRIX_VP, float4(d.smoothNormal, 0)).xyz;
+    o.vertex.xy += normalize(extrude.xy) / _ScreenParams.xy * quadsInterleaving * o.vertex.w * 2;
+
     return o;
 }
 
