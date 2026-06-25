@@ -14,7 +14,7 @@ namespace Voxels.Rendering {
         internal static VoxelRenderer Instance { get; private set; }
 
         [SerializeField] internal ComputeShader cullingShader;
-        [SerializeField] internal GenerationParameters generationParameters;
+        [SerializeField] internal GenerationParameters[] generationParameters;
         [SerializeField] private float quadsInterleaving = 0.05f; // Remove 1 pixel gaps between triangles
 
         public float QuadsInterleaving {
@@ -30,6 +30,18 @@ namespace Voxels.Rendering {
         internal GraphicsBuffer indicesBuffer { get; private set; } // All 16 bits indices
         internal GraphicsBuffer counterBuffer { get; private set; } // Buffer to store a counter
         private readonly Dictionary<Camera, CameraRenderer> renderers = new();
+
+
+        private void Reset() {
+            generationParameters = new GenerationParameters[32];
+            for (int i = 0; i < 32; i++) {
+                generationParameters[i] = GenerationParameters.Default;
+            }
+        }
+
+        private void OnValidate() {
+            ShaderID.SetKeywords(cullingShader);            
+        }
 
 
         internal void Awake() {
@@ -49,7 +61,7 @@ namespace Voxels.Rendering {
             indicesBuffer.SetData(indices);
             counterBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Raw, 1, sizeof(uint));
 
-            ShaderID.SetKeywords(cullingShader);
+            if (cullingShader != null) ShaderID.SetKeywords(cullingShader);
             Camera.onPreCull += Render;
         }
 

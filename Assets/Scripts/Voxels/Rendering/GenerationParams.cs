@@ -33,12 +33,14 @@ namespace Voxels.Rendering {
         /// Whether objects can only be seen from above and inside its horizontal bounds.
         /// This allows to remove faces below the objects and on their sides.
         /// </param>
-        public GenerationParameters(int chunkSize = 64, int mergeNormalsThreshold = 256, int jobHorizontalSize = int.MaxValue, bool seenFromAbove = false) {
+        public GenerationParameters(int chunkSize = 64, int mergeNormalsThreshold = 256, int jobHorizontalSize = 1024, bool seenFromAbove = false) {
             this.chunkSize = chunkSize;
             this.mergeNormalsThreshold = mergeNormalsThreshold;
             this.jobHorizontalSize = jobHorizontalSize;
             this.seenFromAbove = seenFromAbove;
         }
+
+        public static GenerationParameters Default => new(64, 256, 1024, false);
     }
 
 }

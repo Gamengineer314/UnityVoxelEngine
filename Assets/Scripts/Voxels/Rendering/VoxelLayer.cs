@@ -42,7 +42,7 @@ namespace Voxels.Rendering {
                 material.SetFloat(ShaderID.quadsInterleaving, VoxelRenderer.Instance.QuadsInterleaving);
             }
             if (materialLayers[layer] == null) {
-                materialLayers[layer] = new VoxelLayer(new ShaderParameters(material), VoxelRenderer.Instance.generationParameters);
+                materialLayers[layer] = new VoxelLayer(new ShaderParameters(material), VoxelRenderer.Instance.generationParameters[layer]);
             }
             return materialLayers[layer];
         }

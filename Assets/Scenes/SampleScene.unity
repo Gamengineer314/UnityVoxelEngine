@@ -544,10 +544,134 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   cullingShader: {fileID: 7200000, guid: 38ec146a801da7d518513d6aeec0ebe9, type: 3}
   generationParameters:
-    chunkSize: 64
+  - chunkSize: 64
+    mergeNormalsThreshold: 256
+    jobHorizontalSize: 1024
+    seenFromAbove: 0
+  - chunkSize: 64
+    mergeNormalsThreshold: 256
+    jobHorizontalSize: 1024
+    seenFromAbove: 0
+  - chunkSize: 64
+    mergeNormalsThreshold: 256
+    jobHorizontalSize: 1024
+    seenFromAbove: 0
+  - chunkSize: 64
     mergeNormalsThreshold: 256
     jobHorizontalSize: 1024
     seenFromAbove: 1
+  - chunkSize: 64
+    mergeNormalsThreshold: 256
+    jobHorizontalSize: 1024
+    seenFromAbove: 0
+  - chunkSize: 64
+    mergeNormalsThreshold: 256
+    jobHorizontalSize: 1024
+    seenFromAbove: 0
+  - chunkSize: 64
+    mergeNormalsThreshold: 256
+    jobHorizontalSize: 1024
+    seenFromAbove: 0
+  - chunkSize: 64
+    mergeNormalsThreshold: 256
+    jobHorizontalSize: 1024
+    seenFromAbove: 0
+  - chunkSize: 64
+    mergeNormalsThreshold: 256
+    jobHorizontalSize: 1024
+    seenFromAbove: 0
+  - chunkSize: 64
+    mergeNormalsThreshold: 256
+    jobHorizontalSize: 1024
+    seenFromAbove: 0
+  - chunkSize: 64
+    mergeNormalsThreshold: 256
+    jobHorizontalSize: 1024
+    seenFromAbove: 0
+  - chunkSize: 64
+    mergeNormalsThreshold: 256
+    jobHorizontalSize: 1024
+    seenFromAbove: 0
+  - chunkSize: 64
+    mergeNormalsThreshold: 256
+    jobHorizontalSize: 1024
+    seenFromAbove: 0
+  - chunkSize: 64
+    mergeNormalsThreshold: 256
+    jobHorizontalSize: 1024
+    seenFromAbove: 0
+  - chunkSize: 64
+    mergeNormalsThreshold: 256
+    jobHorizontalSize: 1024
+    seenFromAbove: 0
+  - chunkSize: 64
+    mergeNormalsThreshold: 256
+    jobHorizontalSize: 1024
+    seenFromAbove: 0
+  - chunkSize: 64
+    mergeNormalsThreshold: 256
+    jobHorizontalSize: 1024
+    seenFromAbove: 0
+  - chunkSize: 64
+    mergeNormalsThreshold: 256
+    jobHorizontalSize: 1024
+    seenFromAbove: 0
+  - chunkSize: 64
+    mergeNormalsThreshold: 256
+    jobHorizontalSize: 1024
+    seenFromAbove: 0
+  - chunkSize: 64
+    mergeNormalsThreshold: 256
+    jobHorizontalSize: 1024
+    seenFromAbove: 0
+  - chunkSize: 64
+    mergeNormalsThreshold: 256
+    jobHorizontalSize: 1024
+    seenFromAbove: 0
+  - chunkSize: 64
+    mergeNormalsThreshold: 256
+    jobHorizontalSize: 1024
+    seenFromAbove: 0
+  - chunkSize: 64
+    mergeNormalsThreshold: 256
+    jobHorizontalSize: 1024
+    seenFromAbove: 0
+  - chunkSize: 64
+    mergeNormalsThreshold: 256
+    jobHorizontalSize: 1024
+    seenFromAbove: 0
+  - chunkSize: 64
+    mergeNormalsThreshold: 256
+    jobHorizontalSize: 1024
+    seenFromAbove: 0
+  - chunkSize: 64
+    mergeNormalsThreshold: 256
+    jobHorizontalSize: 1024
+    seenFromAbove: 0
+  - chunkSize: 64
+    mergeNormalsThreshold: 256
+    jobHorizontalSize: 1024
+    seenFromAbove: 0
+  - chunkSize: 64
+    mergeNormalsThreshold: 256
+    jobHorizontalSize: 1024
+    seenFromAbove: 0
+  - chunkSize: 64
+    mergeNormalsThreshold: 256
+    jobHorizontalSize: 1024
+    seenFromAbove: 0
+  - chunkSize: 64
+    mergeNormalsThreshold: 256
+    jobHorizontalSize: 1024
+    seenFromAbove: 0
+  - chunkSize: 64
+    mergeNormalsThreshold: 256
+    jobHorizontalSize: 1024
+    seenFromAbove: 0
+  - chunkSize: 64
+    mergeNormalsThreshold: 256
+    jobHorizontalSize: 1024
+    seenFromAbove: 0
   quadsInterleaving: 0.05
 --- !u!1 &1602009078
 GameObject:
