@@ -12,14 +12,15 @@ namespace Voxels.Rendering {
         public readonly uint data1; // x (10b), y (10b), z (10b)
         public readonly uint data2; // width (6b), height (6b), normal (3b), color (16b)
 
-        public VoxelFace(int3 pos, int width, int height, VoxelNormal normal, int color) {
-            data1 = (uint)pos.x | (uint)pos.y << 10 | (uint)pos.z << 20;
+        public VoxelFace(int3 position, int width, int height, VoxelNormal normal, int color) {
+            data1 = (uint)position.x | (uint)position.y << 10 | (uint)position.z << 20;
             data2 = (uint)width - 1 | (uint)height - 1 << 6 | (uint)normal << 12 | (uint)color << 16;
         }
 
         public int X => (int)(data1 & 0x3FF);
         public int Y => (int)(data1 >> 10 & 0x3FF);
         public int Z => (int)(data1 >> 20);
+        public int3 Position => new(X, Y, Z);
         public int Width => (int)((data2 & 0x3F) + 1);
         public int Height => (int)((data2 >> 6 & 0x3F) + 1);
         public VoxelNormal Normal => (VoxelNormal)(data2 >> 12 & 7);
@@ -30,50 +31,39 @@ namespace Voxels.Rendering {
 
 
     /// <summary>
-    /// Per-mesh data
+    /// Per-chunk data
     /// </summary>
-    internal readonly struct VoxelMesh {
-        public readonly float3 center;
-        public readonly float3 size;
-        public readonly float3 position;
-        private readonly uint data1; // normal (3b), faceCount (29b)
-        private readonly uint startFace;
+    internal readonly struct VoxelChunk {
+        public readonly float3 center; // Center of the bounding box
+        public readonly float3 size; // Half the size of the bounding box
+        public readonly CommandOffset offset; // Position and color index (if using texture) offsets
+        private readonly uint normal; // Normal of all the faces in the chunk
+        private readonly uint startFace; // Index of the first face in the chunk in the faces buffer
+        private readonly uint faceCount; // Number of faces in the chunk
+        private readonly uint startInstance; // Index of the first instance of the chunk in the transforms buffer (if using instancing or transform)
+        private readonly uint startRenderedInstance; // Index of the first instance of the chunks in the rendered transforms buffer (if using instancing)
+        private readonly uint instanceCount; // Number of instances of the chunk (if using instancing)
 
-        public VoxelMesh(float3 center, float3 size, float3 position, VoxelNormal normal, int faceCount, int startFace) {
+        public VoxelChunk(float3 center, float3 size, float3 position, int startColor, VoxelNormal normal, int startFace, int faceCount, int startInstance, int startRenderedInstance, int instanceCount) {
             this.center = center;
             this.size = size;
-            this.position = position;
-            data1 = (uint)normal | ((uint)faceCount << 3);
+            offset = new(position, startColor);
+            this.normal = (uint)normal;
             this.startFace = (uint)startFace;
-        }
-
-        public int StartFace => (int)startFace;
-        public int FaceCount => (int)(data1 >> 3);
-        public VoxelNormal Normal => (VoxelNormal)(data1 & 0b111);
-
-        public override string ToString() => $"[{center} {size} {position} {Normal} {StartFace} {FaceCount}]";
-    }
-
-
-    /// <summary>
-    /// Per-mesh data for objects
-    /// </summary>
-    internal readonly struct ObjectMesh {
-        public readonly VoxelMesh mesh;
-        private readonly uint startColor;
-        private readonly uint startInstance;
-
-        public ObjectMesh(
-            float3 center, float3 size, float3 position, VoxelNormal normal, int faceCount, int startFace,
-            int startColor, int startInstance
-        ) {
-            mesh = new(center, size, position, normal, faceCount, startFace);
-            this.startColor = (uint)startColor;
+            this.faceCount = (uint)faceCount;
             this.startInstance = (uint)startInstance;
+            this.startRenderedInstance = (uint)startRenderedInstance;
+            this.instanceCount = (uint)instanceCount;
         }
 
-        public int StartColor => (int)startColor;
+        public VoxelNormal Normal => (VoxelNormal)normal;
+        public int StartFace => (int)startFace;
+        public int FaceCount => (int)faceCount;
         public int StartInstance => (int)startInstance;
+        public int StartRenderedInstance => (int)startRenderedInstance;
+        public int InstanceCount => (int)instanceCount;
+
+        public override string ToString() => $"[{center} {size} {offset.position} {offset.Color} {Normal} {StartFace} {FaceCount} {startInstance} {startRenderedInstance} {instanceCount}]";
     }
     
     
@@ -82,7 +72,14 @@ namespace Voxels.Rendering {
     /// </summary>
     internal readonly struct CommandOffset {
         public readonly float3 position;
-        public readonly uint color;
+        private readonly uint color;
+
+        public CommandOffset(float3 position, int color) {
+            this.position = position;
+            this.color = (uint)color;
+        }
+
+        public int Color => (int)color;
     }
 
 

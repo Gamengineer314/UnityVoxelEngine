@@ -9,15 +9,17 @@ namespace Voxels.Editor {
     internal static class EditorDisposer {
         static EditorDisposer() {
             AssemblyReloadEvents.beforeAssemblyReload += () => {
-                foreach (VoxelRenderer renderer in Object.FindObjectsOfType<VoxelRenderer>()) renderer.OnDestroy();
-                foreach (VoxelTerrainLayer layer in Object.FindObjectsOfType<VoxelTerrainLayer>()) layer.OnDestroy();
-                foreach (VoxelObjectLayer layer in Object.FindObjectsOfType<VoxelObjectLayer>()) layer.OnDestroy();
+                foreach (VoxelRenderer renderer in Object.FindObjectsOfType<VoxelRenderer>()) {
+                    if (renderer.isActiveAndEnabled) renderer.OnDestroy();
+                }
             };
             AssemblyReloadEvents.afterAssemblyReload += () => {
-                foreach (VoxelRenderer renderer in Object.FindObjectsOfType<VoxelRenderer>()) renderer.Awake();
-                foreach (VoxelTerrainLayer layer in Object.FindObjectsOfType<VoxelTerrainLayer>()) layer.Awake();
-                foreach (VoxelObjectLayer layer in Object.FindObjectsOfType<VoxelObjectLayer>()) layer.Awake();
-                foreach (VoxelObject voxelObject in Object.FindObjectsOfType<VoxelObject>()) voxelObject.Start();
+                foreach (VoxelRenderer renderer in Object.FindObjectsOfType<VoxelRenderer>()) {
+                    if (renderer.isActiveAndEnabled) renderer.Awake();
+                }
+                foreach (VoxelMesh mesh in Object.FindObjectsOfType<VoxelMesh>()) {
+                    if (mesh.isActiveAndEnabled) mesh.Start();
+                }
             };
         }
     }

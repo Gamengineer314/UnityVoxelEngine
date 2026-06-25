@@ -37,12 +37,16 @@ namespace Voxels.Collections {
                     while (length > capacity) capacity <<= 1;
                     Resize();
                 }
+                else if (length < capacity >> 2) {
+                    while (length < capacity >> 2) capacity >>= 1;
+                    Resize();
+                }
             }
         }
 
         private void Resize() {
             GraphicsBuffer newBuffer = new(target, capacity, sizeof(T));
-            T[] data = new T[buffer.count];
+            T[] data = new T[Math.Min(length, buffer.count)];
             buffer.GetData(data);
             newBuffer.SetData(data);
             buffer.Dispose();

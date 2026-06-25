@@ -206,7 +206,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!4 &854305876
 Transform:
   m_ObjectHideFlags: 0
@@ -235,6 +235,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   voxelsAsset: {fileID: 4900000, guid: c9be5cb1fa9f2b02c8f7a9ed98826101, type: 3}
+  material: {fileID: 2100000, guid: 463ffc1ec8b58f237b0603a49621f146, type: 2}
   offset: {x: 0, y: 0, z: 0}
 --- !u!1 &963194225
 GameObject:
@@ -357,7 +358,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!114 &968190546
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -371,6 +372,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   voxelsAsset: {fileID: 4900000, guid: c9be5cb1fa9f2b02c8f7a9ed98826101, type: 3}
+  material: {fileID: 2100000, guid: 463ffc1ec8b58f237b0603a49621f146, type: 2}
   offset: {x: 0, y: 0, z: 0}
 --- !u!4 &968190547
 Transform:
@@ -491,7 +493,6 @@ GameObject:
   - component: {fileID: 1587352369}
   - component: {fileID: 1587352368}
   - component: {fileID: 1587352370}
-  - component: {fileID: 1587352371}
   m_Layer: 0
   m_Name: WorldManager
   m_TagString: Untagged
@@ -513,6 +514,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   terrainGenerator: {fileID: 1602009082}
   terrain: {fileID: 1602009080}
+  terrainMaterial: {fileID: 2100000, guid: 5b4dd8a427800bb489d9fa05b457db92, type: 2}
 --- !u!4 &1587352369
 Transform:
   m_ObjectHideFlags: 0
@@ -540,26 +542,13 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 53841a8ec9aa5475290f97380af9e082, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  terrainMaterial: {fileID: 2100000, guid: cac78caaf365edc428d13d3b1e88c092, type: 2}
-  objectsMaterial: {fileID: 2100000, guid: a68530d66fd7a123a9d248cb76adc36e, type: 2}
-  terrainCulling: {fileID: 7200000, guid: b39989d6a89e331409f427fbe1843c39, type: 3}
-  objectsCulling: {fileID: 7200000, guid: acfd48555af50c6e0b900e6895278c74, type: 3}
+  cullingShader: {fileID: 7200000, guid: 38ec146a801da7d518513d6aeec0ebe9, type: 3}
+  generationParameters:
+    chunkSize: 64
+    mergeNormalsThreshold: 256
+    jobHorizontalSize: 1024
+    seenFromAbove: 1
   quadsInterleaving: 0.05
---- !u!114 &1587352371
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1587352365}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 41447d4741de365bb8cf9a838c21cc87, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  meshSize: 64
-  mergeNormalsThreshold: 256
-  jobHorizontalSize: 1024
 --- !u!1 &1602009078
 GameObject:
   m_ObjectHideFlags: 0
@@ -571,7 +560,6 @@ GameObject:
   - component: {fileID: 1602009079}
   - component: {fileID: 1602009080}
   - component: {fileID: 1602009082}
-  - component: {fileID: 1602009083}
   m_Layer: 3
   m_Name: Terrain
   m_TagString: Untagged
@@ -607,6 +595,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   voxelsAsset: {fileID: 0}
+  material: {fileID: 2100000, guid: 5b4dd8a427800bb489d9fa05b457db92, type: 2}
   offset: {x: 0, y: 0, z: 0}
 --- !u!114 &1602009082
 MonoBehaviour:
@@ -632,21 +621,6 @@ MonoBehaviour:
     rgba: 260539010
   - serializedVersion: 2
     rgba: 267119595
---- !u!114 &1602009083
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1602009078}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: c8b9bf25a0ab64804bdabc4552890b58, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  meshSize: 64
-  mergeNormalsThreshold: 256
-  jobHorizontalSize: 1024
 --- !u!1 &1811439572
 GameObject:
   m_ObjectHideFlags: 0

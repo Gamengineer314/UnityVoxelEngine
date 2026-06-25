@@ -5,21 +5,21 @@
 
 // C equivalent of VoxelStructs.cs
 
-struct VoxelMesh {
-    float3 center;
-    float3 size;
+struct CommandOffset {
     float3 position;
-    uint data1;
-    uint startFace;
+    uint color;
 };
 
-#define MESH_NORMAL(mesh) ((mesh).data1 & 7)
-#define MESH_COUNT(mesh) ((mesh).data1 >> 3)
-
-struct ObjectMesh {
-    VoxelMesh mesh;
-    uint startColor;
+struct VoxelChunk {
+    float3 center;
+    float3 size;
+    CommandOffset offset;
+    uint normal;
+    uint startFace;
+    uint faceCount;
     uint startInstance;
+    uint startRenderedInstance;
+    uint instanceCount;
 };
 
 
@@ -58,11 +58,5 @@ fixed4 getColor(uint color32) {
         ((color32 >> 24) & 0xFF) / 255.0
     );
 }
-
-
-struct CommandOffset {
-    float3 position;
-    uint color;
-};
 
 #endif

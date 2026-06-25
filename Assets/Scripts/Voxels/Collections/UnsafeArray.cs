@@ -12,7 +12,7 @@ namespace Voxels.Collections {
     /// <typeparam name="T">Type of the elements in the array</typeparam>
     public readonly unsafe struct UnsafeArray<T> : IEnumerable<T>, IDisposable where T : unmanaged {
         public readonly int length;
-        [NativeDisableUnsafePtrRestriction] public readonly void* ptr;
+        [NativeDisableUnsafePtrRestriction] public readonly T* ptr;
         private readonly Allocator allocator;
 
 
@@ -20,16 +20,16 @@ namespace Voxels.Collections {
             this.length = length;
             this.allocator = allocator;
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
-            ptr = UnsafeUtility.MallocTracked(length * sizeof(T), UnsafeUtility.AlignOf<T>(), allocator, 0);
+            ptr = (T*)UnsafeUtility.MallocTracked(length * sizeof(T), UnsafeUtility.AlignOf<T>(), allocator, 0);
 #else
-            ptr = UnsafeUtility.Malloc(length * sizeof(T), UnsafeUtility.AlignOf<T>(), allocator);
+            ptr = (T*)UnsafeUtility.Malloc(length * sizeof(T), UnsafeUtility.AlignOf<T>(), allocator);
 #endif
             if (options == NativeArrayOptions.ClearMemory) UnsafeUtility.MemClear(ptr, length * sizeof(T));
         }
 
         public UnsafeArray(NativeArray<T> array) {
             length = array.Length;
-            ptr = array.GetUnsafePtr();
+            ptr = (T*)array.GetUnsafePtr();
             allocator = Allocator.None;
         }
 
@@ -48,7 +48,7 @@ namespace Voxels.Collections {
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
                 if (index < 0 || index >= length) throw new IndexOutOfRangeException($"Index {index} is out of range of UnsafeArray of size {length}");
 #endif
-                return ref ((T*)ptr)[index];
+                return ref ptr[index];
             }
         }
 

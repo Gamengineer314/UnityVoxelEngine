@@ -1,0 +1,98 @@
+#pragma kernel cull
+
+#pragma multi_compile_local _ VOXEL_TRANSFORM
+#pragma multi_compile_local _ VOXEL_INSTANCE
+
+#include "VoxelStructs.cginc"
+
+
+uniform float4 cameraFarPlane; // x,y,z: normal, w: distance
+uniform float4 cameraLeftPlane;
+uniform float4 cameraRightPlane;
+uniform float4 cameraDownPlane;
+uniform float4 cameraUpPlane;
+uniform float4 cameraPosition; // x,y,z: position
+#ifndef VOXEL_INSTANCE
+uniform int nChunks;
+#endif
+
+StructuredBuffer<VoxelChunk> chunks; // Input: chunks
+RWStructuredBuffer<uint> commands; // Output: indirect arguments
+RWStructuredBuffer<CommandOffset> offsets; // Output: offsets
+#ifdef VOXEL_TRANSFORM
+StructuredBuffer<float4x4> transforms; // Input: transform of each instance
+RWStructuredBuffer<float4x4> renderedTransforms; // Output: transform of each rendered instance
+#endif
+
+
+#ifdef VOXEL_TRANSFORM
+#define TRANSFORM_DECL ,float4x4 transform
+#define TRANSFORM_VAL ,transform
+#else
+#define TRANSFORM_DECL
+#define TRANSFORM_VAL
+#endif
+
+
+bool outsidePlane(float3 center, float3 size, float4 plane TRANSFORM_DECL) {
+#ifdef VOXEL_TRANSFORM
+    plane = mul(plane, transform);
+#endif
+    float3 normalSign = sign(plane.xyz);
+    float3 closestPoint = center + size * normalSign;
+    return dot(float4(closestPoint, 1), plane) < 0;
+}
+
+
+// Ignore chunks outside of camera view
+bool boundsCulling(float3 center, float3 size TRANSFORM_DECL) {
+    if (outsidePlane(center, size, cameraFarPlane TRANSFORM_VAL)) return false;
+    if (outsidePlane(center, size, cameraLeftPlane TRANSFORM_VAL)) return false;
+    if (outsidePlane(center, size, cameraRightPlane TRANSFORM_VAL)) return false;
+    if (outsidePlane(center, size, cameraUpPlane TRANSFORM_VAL)) return false;
+    if (outsidePlane(center, size, cameraDownPlane TRANSFORM_VAL)) return false;
+    return true;
+}
+
+
+// Ignore chunks that are invisible because of their normal
+bool normalCulling(float3 center, float3 size, uint normalID TRANSFORM_DECL) {
+    if (normalID == NORMAL_ANY) return true;
+    float3 normal = getNormal(normalID);
+    float3 back = center - normal * size;
+#ifdef VOXEL_TRANSFORM
+    back = mul(transform, float4(back, 1)).xyz;
+    normal = mul(transform, float4(normal, 0)).xyz;
+#endif
+    return dot(back - cameraPosition.xyz, normal) <= 0;
+}
+
+
+#ifdef VOXEL_INSTANCE
+[numthreads(1,1,1)]
+#else
+[numthreads(64,1,1)]
+#endif
+void cull(uint3 id : SV_DispatchThreadID) {
+#ifndef VOXEL_INSTANCE
+    if (id.x >= nChunks) return;
+#endif
+    VoxelChunk chunk = chunks[id.x];
+#ifdef VOXEL_TRANSFORM
+    float4x4 transform = transforms[chunk.startInstance];
+#endif
+    if (normalCulling(chunk.center, chunk.size, chunk.normal TRANSFORM_VAL) && boundsCulling(chunk.center, chunk.size TRANSFORM_VAL)) {
+        uint cmd = offsets.IncrementCounter();
+        commands[cmd * 5] = chunk.faceCount * 6; // indexCountPerInstance
+        commands[cmd * 5 + 3] = chunk.startFace * 4; // baseVertexIndex
+        offsets[cmd] = chunk.offset;
+#ifdef VOXEL_TRANSFORM
+#ifdef VOXEL_INSTANCE
+        commands[cmd * 5 + 4] = chunk.startRenderedInstance; // startInstance
+        renderedTransforms[chunk.startRenderedInstance] = transform;
+#else
+        renderedTransforms[cmd] = transform;
+#endif
+#endif
+    }
+}

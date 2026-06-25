@@ -1,56 +1,69 @@
 using UnityEngine;
-using Voxels.Collections;
 
 namespace Voxels.Rendering {
     
     /// <summary>
-    /// Voxel renderer for a layer and a camera
+    /// Voxel renderer for a layer, a shader, and a camera
     /// </summary>
-    internal abstract class LayerRenderer {
-        protected GraphicsBuffer meshesBuffer;
+    internal class LayerRenderer {
         private GraphicsBuffer commandsBuffer;
         private GraphicsBuffer offsetsBuffer;
-        protected readonly RenderParams renderParams;
-        protected readonly ComputeShader cullingShader;
-        protected readonly int cullingGroupSize;
+        private GraphicsBuffer renderedTransformsBuffer;
+        private readonly RenderParams renderParams;
+        private readonly ShaderParameters parameters;
+        private readonly int cullingGroupSize;
         private readonly uint[] count = new uint[1];
 
 
-        internal LayerRenderer(Material material, ComputeShader cullingShader, Camera camera, int layer) {
+        internal LayerRenderer(Material material, Camera camera, int layer, ShaderParameters parameters) {
             renderParams = new(material) {
                 camera = camera,
                 layer = layer,
                 worldBounds = new(Vector3.zero, new Vector3(float.MaxValue, float.MaxValue, float.MaxValue)),
                 matProps = new()
             };
-            this.cullingShader = cullingShader;
-            cullingShader.GetKernelThreadGroupSizes(0, out uint size, out _, out _);
+            SetCullingKeywords();
+            VoxelRenderer.Instance.cullingShader.GetKernelThreadGroupSizes(0, out uint size, out _, out _);
             cullingGroupSize = (int)size;
+            this.parameters = parameters;
         }
 
 
         internal virtual void Dispose() {
             commandsBuffer?.Dispose();
             offsetsBuffer?.Dispose();
+            renderedTransformsBuffer?.Dispose();
         }
 
 
         /// <summary>
         /// Set the buffers used for culling and rendering
         /// </summary>
-        protected unsafe void SetBuffers(GraphicsBuffer meshesBuffer, GraphicsBuffer facesBuffer, GraphicsBuffer colorsBuffer) {
+        internal unsafe void SetBuffers(GraphicsBuffer chunksBuffer, GraphicsBuffer facesBuffer, GraphicsBuffer colorsBuffer, GraphicsBuffer transformsBuffer) {
+            ComputeShader cullingShader = VoxelRenderer.Instance.cullingShader;
             renderParams.matProps.SetBuffer(ShaderID.faces, facesBuffer);
             renderParams.matProps.SetBuffer(ShaderID.colors, colorsBuffer);
-            if (meshesBuffer != this.meshesBuffer) { // Create corresponding commands and offsets buffers
-                this.meshesBuffer = meshesBuffer;
+            if (commandsBuffer == null || chunksBuffer.count != offsetsBuffer.count) { // Create corresponding commands and offsets buffers
                 commandsBuffer?.Dispose();
-                commandsBuffer = new(GraphicsBuffer.Target.IndirectArguments | GraphicsBuffer.Target.Structured, meshesBuffer.count * 5, sizeof(uint));
-                GraphicsBuffer.IndirectDrawIndexedArgs[] commands = new GraphicsBuffer.IndirectDrawIndexedArgs[meshesBuffer.count];
-                for (int i = 0; i < meshesBuffer.count; i++) commands[i] = new() { instanceCount = 1 };
+                commandsBuffer = new(GraphicsBuffer.Target.IndirectArguments | GraphicsBuffer.Target.Structured, chunksBuffer.count * 5, sizeof(uint));
+                GraphicsBuffer.IndirectDrawIndexedArgs[] commands = new GraphicsBuffer.IndirectDrawIndexedArgs[chunksBuffer.count];
+                for (int i = 0; i < chunksBuffer.count; i++) commands[i] = new() { instanceCount = 1 };
                 commandsBuffer.SetData(commands);
                 offsetsBuffer?.Dispose();
-                offsetsBuffer = new(GraphicsBuffer.Target.Structured | GraphicsBuffer.Target.Counter, meshesBuffer.count, sizeof(CommandOffset));
+                offsetsBuffer = new(GraphicsBuffer.Target.Structured | GraphicsBuffer.Target.Counter, chunksBuffer.count, sizeof(CommandOffset));
                 renderParams.matProps.SetBuffer(ShaderID.offsets, offsetsBuffer);
+                if (parameters.transform) {
+                    renderedTransformsBuffer?.Dispose();
+                    renderedTransformsBuffer = new(GraphicsBuffer.Target.Structured, chunksBuffer.count, sizeof(Matrix4x4));
+                    renderParams.matProps.SetBuffer(ShaderID.renderedTransforms, renderedTransformsBuffer);
+                }
+            }
+            cullingShader.SetBuffer(0, ShaderID.chunks, chunksBuffer);
+            cullingShader.SetBuffer(0, ShaderID.commands, commandsBuffer);
+            cullingShader.SetBuffer(0, ShaderID.offsets, offsetsBuffer);
+            if (parameters.transform) {
+                cullingShader.SetBuffer(0, ShaderID.transforms, transformsBuffer);
+                cullingShader.SetBuffer(0, ShaderID.renderedTransforms, renderedTransformsBuffer);
             }
         }
 
@@ -58,26 +71,33 @@ namespace Voxels.Rendering {
         /// <summary>
         /// Frustum and back-face culling
         /// </summary>
-        internal virtual void Cull() {
+        internal virtual void Cull(int nChunks) {
             VoxelRenderer renderer = VoxelRenderer.Instance;
+            ComputeShader cullingShader = renderer.cullingShader;
+            Camera camera = renderParams.camera;
+            int nGroups = parameters.instance ? nChunks : Mathf.CeilToInt((float)nChunks / cullingGroupSize);
 
             // Set camera data
-            cullingShader.SetVector(ShaderID.cameraPosition, renderParams.camera.transform.position);
-            Plane[] cameraPlanes = GeometryUtility.CalculateFrustumPlanes(renderParams.camera);
+            SetCullingKeywords();
+            cullingShader.SetVector(ShaderID.cameraPosition, camera.transform.position);
+            Plane[] cameraPlanes = GeometryUtility.CalculateFrustumPlanes(camera);
             cullingShader.SetVector(ShaderID.cameraFarPlane, new Vector4(cameraPlanes[5].normal.x, cameraPlanes[5].normal.y, cameraPlanes[5].normal.z, cameraPlanes[5].distance));
             cullingShader.SetVector(ShaderID.cameraLeftPlane, new Vector4(cameraPlanes[0].normal.x, cameraPlanes[0].normal.y, cameraPlanes[0].normal.z, cameraPlanes[0].distance));
             cullingShader.SetVector(ShaderID.cameraRightPlane, new Vector4(cameraPlanes[1].normal.x, cameraPlanes[1].normal.y, cameraPlanes[1].normal.z, cameraPlanes[1].distance));
             cullingShader.SetVector(ShaderID.cameraDownPlane, new Vector4(cameraPlanes[2].normal.x, cameraPlanes[2].normal.y, cameraPlanes[2].normal.z, cameraPlanes[2].distance));
             cullingShader.SetVector(ShaderID.cameraUpPlane, new Vector4(cameraPlanes[3].normal.x, cameraPlanes[3].normal.y, cameraPlanes[3].normal.z, cameraPlanes[3].distance));
+            if (!parameters.instance) cullingShader.SetInt(ShaderID.nChunks, nChunks);
 
             // Frustum culling
-            cullingShader.SetBuffer(0, ShaderID.meshes, meshesBuffer);
-            cullingShader.SetBuffer(0, ShaderID.commands, commandsBuffer);
-            cullingShader.SetBuffer(0, ShaderID.offsets, offsetsBuffer);
             offsetsBuffer.SetCounterValue(0);
-            cullingShader.Dispatch(0, meshesBuffer.count / cullingGroupSize, 1, 1);
+            cullingShader.Dispatch(0, nGroups, 1, 1);
             GraphicsBuffer.CopyCount(offsetsBuffer, renderer.counterBuffer, 0);
             renderer.counterBuffer.GetData(count);
+        }
+
+        private void SetCullingKeywords() {
+            VoxelRenderer.Instance.cullingShader.SetKeyword(in ShaderID.cullingInstance, parameters.instance);
+            VoxelRenderer.Instance.cullingShader.SetKeyword(in ShaderID.cullingTransform, parameters.transform);
         }
 
 
@@ -86,63 +106,6 @@ namespace Voxels.Rendering {
         /// </summary>
         internal void Render() {
             Graphics.RenderPrimitivesIndexedIndirect(renderParams, MeshTopology.Triangles, VoxelRenderer.Instance.indicesBuffer, commandsBuffer, (int)count[0]);
-        }
-    }
-
-
-
-    /// <summary>
-    /// Voxel terrain renderer for a layer and a camera
-    /// </summary>
-    internal class TerrainLayerRenderer : LayerRenderer {
-        internal TerrainLayerRenderer(Camera camera, int layer) :
-            base(VoxelRenderer.Instance.terrainMaterial, VoxelRenderer.Instance.terrainCulling, camera, layer) {}
-
-        internal void SetBuffers(VoxelTerrainLayer layer) {
-            ListBuffer<VoxelMesh> meshesBuffer = layer.meshesBuffer;
-            if (meshesBuffer.buffer != this.meshesBuffer) { // Add zeros until multiple of group size
-                int length = meshesBuffer.Length;
-                int lastGroup = length % cullingGroupSize;
-                if (lastGroup > 0) {
-                    meshesBuffer.AddRange(new VoxelMesh[cullingGroupSize - lastGroup]);
-                    meshesBuffer.Length = length;
-                }
-            }
-            SetBuffers(meshesBuffer.buffer, layer.facesBuffer.buffer, layer.colorsBuffer.buffer);
-        }
-    }
-
-
-
-    /// <summary>
-    /// Voxel object renderer for a layer and a camera
-    /// </summary>
-    internal class ObjectLayerRenderer : LayerRenderer {
-        private GraphicsBuffer transformsBuffer;
-        private GraphicsBuffer renderedTransformsBuffer;
-
-        internal ObjectLayerRenderer(Camera camera, int layer) :
-            base(VoxelRenderer.Instance.objectsMaterial, VoxelRenderer.Instance.objectsCulling, camera, layer) {}
-
-        internal void SetBuffers(VoxelObjectLayer layer) {
-            SetBuffers(layer.meshesBuffer.buffer, layer.facesBuffer.buffer, layer.colorsBuffer.buffer);
-            if (layer.transformsBuffer.buffer != transformsBuffer) { // Transforms buffer
-                transformsBuffer = layer.transformsBuffer.buffer;
-                renderedTransformsBuffer?.Dispose();
-                renderedTransformsBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, transformsBuffer.count, transformsBuffer.stride);
-                renderParams.matProps.SetBuffer(ShaderID.transforms, renderedTransformsBuffer);
-            }
-        }
-
-        internal override void Cull() {
-            cullingShader.SetBuffer(0, ShaderID.transforms, transformsBuffer);
-            cullingShader.SetBuffer(0, ShaderID.renderedTransforms, renderedTransformsBuffer);
-            base.Cull();
-        }
-
-        internal override void Dispose() {
-            base.Dispose();
-            renderedTransformsBuffer.Dispose();
         }
     }
 }

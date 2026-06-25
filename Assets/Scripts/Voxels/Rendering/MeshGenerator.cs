@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Collections.Generic;
 using UnityEngine;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
@@ -13,142 +14,208 @@ namespace Voxels.Rendering {
     /// <summary>
     /// Mesh generator from voxel collections
     /// </summary>
-    internal abstract class MeshGenerator<Generator, Result>
-        where Generator : unmanaged, IMeshGenerator
-        where Result : unmanaged, IMeshResult<Generator> {
-        private readonly int meshSize;
-        private readonly int mergeNormalsThreshold;
-        private readonly int jobHorizontalSize;
-        private readonly bool seenFromAbove;
+    internal class MeshGenerator {
+        private readonly GenerationParameters parameters;
+        private readonly bool textured;
 
-        protected Result result;
-        private Unsafe2DArray<Generator> generators;
-        private Native2DArray<JobHandle> handles;
-        private JobHandle handle;
+        private readonly LayerData layer;
+        private readonly Dictionary<VoxelColumns, List<(MeshData data, JobHandle handle)>> jobs = new();
 
-        public bool IsCompleted => handle.IsCompleted;
-        public int JobCount => handles.Array.Length;
-        public int CompletedCount => handles.Array.Count(h => h.IsCompleted);
+        public int JobCount => jobs.Sum(kv => kv.Value.Count);
+        public int CompletedCount => jobs.Sum(kv => kv.Value.Count(j => j.handle.IsCompleted));
 
 
         /// <summary>
         /// Create a mesh generator
         /// </summary>
-        /// <param name="merger">
-        /// Merger used to combine the result of multiple jobs and multiple generations.
+        /// <param name="textured">
+        /// Whether the meshes should use a texture (=> faces contain a texture coordinate, greedy mesher can combine faces with different colors)
+        /// or not (=> faces contain the color directly, greedy mesher can't combine faces with different colors)
         /// </param>
-        /// <param name="meshSize">
-        /// Max size for individual meshes.
-        /// Multiple meshes can be generated from the same voxel collection if it exceeds this size.
-        /// The generator will perform best if [meshSize] is a multiple of 64.
-        /// </param>
-        /// <param name="mergeNormalsThreshold">
-        /// Number of faces below which meshes at the same position with different normals must be merged together.
-        /// Objects smaller than the threshold will use a single mesh but can't be partially culled based on normals.
-        /// </param>
-        /// <param name="jobHorizontalSize">
-        /// Max horizontal size a generator job can process.
-        /// Multiple jobs will be used to generate the meshes in parallel if a voxel collection exceeds this size.
-        /// The generator will perform best if [jobHorizontalSize] is a multiple of [meshSize]
-        /// </param>
-        /// <param name="seenFromAbove">
-        /// Whether objects can only be seen from above and inside its horizontal bounds.
-        /// This allows to remove faces below the objects and on their sides.
-        /// </param>
-        protected MeshGenerator(Result result, int meshSize = 64, int mergeNormalsThreshold = 256, int jobHorizontalSize = int.MaxValue, bool seenFromAbove = false) {
-            if (meshSize > VoxelFace.maxSize) throw new ArgumentException($"Mesh size can't exceed {VoxelFace.maxSize}", nameof(meshSize));
-            if (mergeNormalsThreshold > VoxelRenderer.maxFaceCount) mergeNormalsThreshold = VoxelRenderer.maxFaceCount;
-            this.meshSize = meshSize;
-            this.mergeNormalsThreshold = mergeNormalsThreshold;
-            this.jobHorizontalSize = jobHorizontalSize;
-            this.seenFromAbove = seenFromAbove;
-            this.result = result;
-            this.result.Init();
+        /// <param name="parameters">Generation parameters</param>
+        public MeshGenerator(LayerData layer, bool textured, GenerationParameters parameters) {
+            if (parameters.chunkSize <= 0 || parameters.chunkSize > VoxelFace.maxSize)
+                throw new ArgumentException($"Chunk size must be positive and can't exceed {VoxelFace.maxSize}", nameof(parameters.chunkSize));
+            this.textured = textured;
+            this.parameters = parameters;
+            this.layer = layer;
         }
-
-
-        /// <summary>
-        /// Dispose the result
-        /// </summary>
-        public void Dispose() => result.Dispose();
+        
 
         /// <summary>
-        /// Complete generation and dispose generation jobs
+        /// Complete the generation jobs of a mesh and add their results
         /// </summary>
-        public void Complete() {
-            handle.Complete();
-            foreach (Generator generator in generators) {
-                generator.Dispose();
+        /// <param name="voxels">Voxels that were passed to Schedule</param>
+        /// <param name="startInstance">Index of the first instance of the mesh</param>
+        public void Complete(VoxelColumns voxels, int startInstance) {
+            if (!jobs.TryGetValue(voxels, out List<(MeshData data, JobHandle handle)> meshJobs)) return;
+            foreach ((MeshData data, JobHandle handle) in meshJobs) {
+                handle.Complete();
+                AddData(data, startInstance);
+                data.Dispose();
             }
-            generators.Dispose();
-            handles.Dispose();
+            jobs.Remove(voxels);
+        }
+
+        /// <summary>
+        /// Complete the generation jobs of a mesh that are completed and add their results
+        /// </summary>
+        /// <param name="voxels">Voxels that were passed to Schedule</param>
+        /// <param name="startInstance">Index of the first instance of the mesh</param>
+        /// <returns>Whether all remaining jobs for that mesh were completed</returns>
+        public bool CompleteCompleted(VoxelColumns voxels, int startInstance) {
+            if (!jobs.TryGetValue(voxels, out List<(MeshData data, JobHandle handle)> meshJobs)) return true;
+            for (int i = 0; i < meshJobs.Count; i++) {
+                if (meshJobs[i].handle.IsCompleted) {
+                    meshJobs[i].handle.Complete();
+                    MeshData data = meshJobs[i].data;
+                    AddData(data, startInstance);
+                    data.Dispose();
+                    meshJobs.RemoveAtSwapBack(i);
+                }
+            }
+            if (meshJobs.Count == 0) {
+                jobs.Remove(voxels);
+                return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Complete all generation jobs without adding their results
+        /// </summary>
+        public void Dispose() {
+            foreach (List<(MeshData, JobHandle)> meshJobs in jobs.Values) {
+                foreach ((MeshData data, JobHandle handle) in meshJobs) {
+                    handle.Complete();
+                    data.Dispose();
+                }
+            }
+            jobs.Clear();
         }
 
 
         /// <summary>
-        /// Generate meshes from a voxel collection
+        /// Schedule generation of meshes from a voxel collection
         /// </summary>
         /// <param name="voxels">The voxels</param>
         /// <param name="offset">Offset to add to the positions</param>
-        protected void Generate(VoxelColumns voxels, float3 offset, Generator generator) {
-            int nJobsX = (int)math.ceil((float)voxels.sizeX / jobHorizontalSize);
-            int nJobsZ = (int)math.ceil((float)voxels.sizeZ / jobHorizontalSize);
-            generators = new Unsafe2DArray<Generator>(nJobsX, nJobsZ, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
-            handles = new(nJobsX, nJobsZ, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
-
-            // Create jobs
-            for (int jobZ = 0; jobZ < nJobsZ; jobZ++) {
-                for (int jobX = 0; jobX < nJobsX; jobX++) {
-                    Generator copy = generator;
-                    copy.Init();
-                    generators[jobX, jobZ] = copy;
-                    int jobStartX = jobX * jobHorizontalSize;
-                    int jobStartZ = jobZ * jobHorizontalSize;
-                    int jobSizeX = math.min(jobHorizontalSize, voxels.sizeX - jobStartX);
-                    int jobSizeZ = math.min(jobHorizontalSize, voxels.sizeZ - jobStartZ);
-                    GeneratorJob job = new(voxels, jobStartX, jobStartZ, jobSizeX, jobSizeZ, offset, meshSize, mergeNormalsThreshold, seenFromAbove, copy);
-                    handles[jobX, jobZ] = job.Schedule();
+        public void Schedule(VoxelColumns voxels, float3 offset) {
+            if (jobs.ContainsKey(voxels)) throw new InvalidOperationException("Generation of this mesh has already been scheduled");
+            List<(MeshData data, JobHandle handle)> meshJobs = new();
+            jobs[voxels] = meshJobs;
+            int nJobsX = (int)math.ceil((float)voxels.sizeX / parameters.jobHorizontalSize);
+            int nJobsZ = (int)math.ceil((float)voxels.sizeZ / parameters.jobHorizontalSize);
+            for (int jobZ = 0, i = 0; jobZ < nJobsZ; jobZ++) {
+                for (int jobX = 0; jobX < nJobsX; jobX++, i++) {
+                    int jobStartX = jobX * parameters.jobHorizontalSize;
+                    int jobStartZ = jobZ * parameters.jobHorizontalSize;
+                    int jobSizeX = math.min(parameters.jobHorizontalSize, voxels.sizeX - jobStartX);
+                    int jobSizeZ = math.min(parameters.jobHorizontalSize, voxels.sizeZ - jobStartZ);
+                    MeshData data = new(true);
+                    GeneratorJob job = new(voxels, jobStartX, jobStartZ, jobSizeX, jobSizeZ, offset, parameters.chunkSize, parameters.mergeNormalsThreshold, parameters.seenFromAbove, textured, data);
+                    JobHandle handle = job.Schedule();
+                    meshJobs.Add((data, handle));
                 }
             }
+        }
 
-            ResultJob resultJob = new(result, generators.Array);
-            handle = resultJob.Schedule(JobHandle.CombineDependencies(handles.Array));
+
+        /// <summary>
+        /// Add the result of a job to the layer
+        /// </summary>
+        /// <param name="layer">Layer data</param>
+        /// <param name="data">Job output data</param>
+        /// <param name="textured">Whether the meshes use a texture</param>
+        private void AddData(MeshData data, int startInstance) {
+            AddData(ref layer.cpu, in data, startInstance, textured);
+            layer.gpu.chunks.AddRange(layer.cpu.chunks.AsArray().GetSubArray(layer.gpu.chunks.Length, layer.cpu.chunks.Length - layer.gpu.chunks.Length));
+            layer.gpu.faces.AddRange(layer.cpu.faces.AsArray().GetSubArray(layer.gpu.faces.Length, layer.cpu.faces.Length - layer.gpu.faces.Length));
+            layer.gpu.colors.AddRange(layer.cpu.colors.AsArray().GetSubArray(layer.gpu.colors.Length, layer.cpu.colors.Length - layer.gpu.colors.Length));
+        }
+
+        [BurstCompile]
+        private static void AddData(ref CPULayerData layer, in MeshData data, int startInstance, bool textured) {
+            // Increase capacity
+            layer.faces.Capacity = layer.faces.Length + data.faces.Length;
+            layer.chunks.Capacity = layer.chunks.Length + data.chunks.Length;
+            if (textured) layer.colors.Capacity = layer.colors.Length + data.colors.Length;
+
+            // Add chunks
+            int startFace = layer.faces.Length;
+            int startColor = layer.colors.Length;
+            foreach (VoxelChunk chunk in data.chunks) {
+                layer.chunks.Add(new VoxelChunk(
+                    chunk.center, chunk.size, chunk.offset.position, chunk.offset.Color + startColor,
+                    chunk.Normal, chunk.StartFace + startFace, chunk.FaceCount, startInstance, 0, 0
+                ));
+            }
+
+            // Add faces and colors
+            if (textured) {
+                foreach (VoxelFace face in data.faces) {
+                    layer.faces.Add(face);
+                }
+                foreach (Color32 color in data.colors) {
+                    layer.colors.Add(color);
+                }
+            }
+            else {
+                // Merge colors
+                UnsafeArray<int> colorMap = new(data.colors.Length, Allocator.Temp);
+                foreach (KVPair<uint, int> kv in data.colorIndices) {
+                    if (layer.colorIndices.TryGetValue(kv.Key, out int index)) {
+                        colorMap[kv.Value] = index;
+                    }
+                    else {
+                        colorMap[kv.Value] = layer.colorIndices.Count;
+                        layer.colorIndices[kv.Key] = layer.colorIndices.Count;
+                        layer.colors.Add(Identifiers.IdToColor(kv.Key));
+                    }
+                }
+                if (data.colorIndices.Count > VoxelFace.maxColor) throw new InvalidOperationException($"Number of colors can't exceed {VoxelFace.maxColor}");
+
+                foreach (VoxelFace face in data.faces) {
+                    layer.faces.Add(new VoxelFace(face.Position, face.Width, face.Height, face.Normal, colorMap[face.Color]));
+                }
+                colorMap.Dispose();
+            }
         }
 
 
 
         [BurstCompile]
         private struct GeneratorJob : IJob {
-            private const int chunkSize = 64;
+            private const int subChunkSize = 64;
 
             [ReadOnly] private readonly VoxelColumns voxels; // All voxels
             private readonly int startX, startZ; // Start of the part to generate
             private readonly int sizeX, sizeZ; // Size of the part to generate
             private readonly float3 offset;
-            private readonly int meshSize;
+            private readonly int chunkSize;
             private readonly int mergeNormalsThreshold;
             private readonly bool seenFromAbove;
-            private Generator generator; // Final output depending on the type of generator
+            private readonly bool textured;
+            private MeshData data;
 
-            private int3 currentMeshStart;
             private int3 currentChunkStart;
-            private int3 currentChunkSize;
-            private int meshIndex;
+            private int3 currentSubChunkStart;
+            private int3 currentSubChunkSize;
+            private int chunkIndex;
             private int startFace;
+            private int nIDs;
             private UnsafeArray<ulong> rows;
             private UnsafeArray<bool2> sides;
             private UnsafeArray<ulong> planes;
-            private UnsafeHashMap<uint, int> idIndex;
-            private UnsafeList<uint> ids;
-            private UnsafeList<VoxelFace> faces;
-            private UnsafeArray<int2> meshes;
+            private UnsafeList<VoxelFace> currentFaces;
+            private UnsafeArray<int2> chunks;
 
             public GeneratorJob(
                 VoxelColumns voxels,
                 int startX, int startZ, int sizeX, int sizeZ,
                 float3 offset,
-                int meshSize, int mergeNormalsThreshold, bool seenFromAbove,
-                Generator generator
+                int chunkSize, int mergeNormalsThreshold, bool seenFromAbove, bool textured,
+                MeshData data
             ) {
                 this.voxels = voxels;
                 this.startX = startX;
@@ -156,89 +223,91 @@ namespace Voxels.Rendering {
                 this.sizeX = sizeX;
                 this.sizeZ = sizeZ;
                 this.offset = offset;
-                this.meshSize = meshSize;
+                this.chunkSize = chunkSize;
                 this.mergeNormalsThreshold = mergeNormalsThreshold;
                 this.seenFromAbove = seenFromAbove;
-                this.generator = generator;
+                this.textured = textured;
+                this.data = data;
 
-                currentMeshStart = 0;
                 currentChunkStart = 0;
-                currentChunkSize = 0;
+                currentSubChunkStart = 0;
+                currentSubChunkSize = 0;
                 startFace = 0;
-                meshIndex = 0;
+                chunkIndex = 0;
+                nIDs = 0;
                 rows = default;
                 sides = default;
                 planes = default;
-                idIndex = default;
-                ids = default;
-                faces = default;
-                meshes = default;
+                currentFaces = default;
+                chunks = default;
             }
 
 
             public void Execute() {
                 // Find IDs and y ranges
-                idIndex = new UnsafeHashMap<uint, int>(0, Allocator.Temp);
-                ids = new UnsafeList<uint>(0, Allocator.Temp);
-                int nMeshesX = (int)math.ceil((float)sizeX / meshSize);
-                int nMeshesZ = (int)math.ceil((float)sizeZ / meshSize);
-                Native2DArray<int2> yRanges = new(nMeshesX, nMeshesZ, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
-                for (int meshZ = 0; meshZ < nMeshesZ; meshZ++) {
-                    int meshStartZ = startZ + meshZ * meshSize;
-                    int meshEndZ = math.min(meshStartZ + meshSize, startZ + sizeZ);
-                    for (int meshX = 0; meshX < nMeshesX; meshX++) {
-                        int meshStartX = startX + meshX * meshSize;
-                        int meshEndX = math.min(meshStartX + meshSize, startX + sizeX);
+                int nChunksX = (int)math.ceil((float)sizeX / chunkSize);
+                int nChunksZ = (int)math.ceil((float)sizeZ / chunkSize);
+                Native2DArray<int2> yRanges = new(nChunksX, nChunksZ, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
+                for (int chunkZ = 0; chunkZ < nChunksZ; chunkZ++) {
+                    int chunkStartZ = startZ + chunkZ * chunkSize;
+                    int chunkEndZ = math.min(chunkStartZ + chunkSize, startZ + sizeZ);
+                    for (int chunkX = 0; chunkX < nChunksX; chunkX++) {
+                        int chunkStartX = startX + chunkX * chunkSize;
+                        int chunkEndX = math.min(chunkStartX + chunkSize, startX + sizeX);
                         int min = int.MaxValue, max = int.MinValue;
-                        for (int z = meshStartZ; z < meshEndZ; z++) {
-                            for (int x = meshStartX; x < meshEndX; x++) {
+                        for (int z = chunkStartZ; z < chunkEndZ; z++) {
+                            for (int x = chunkStartX; x < chunkEndX; x++) {
                                 min = math.min(min, voxels.GetMin(x, z));
                                 max = math.max(max, voxels.GetMax(x, z));
                                 foreach (Voxel voxel in voxels.GetColumn(x, z)) {
-                                    uint id = generator.MergeIdentifier(voxel.color);
-                                    if (!idIndex.ContainsKey(id)) {
-                                        idIndex[id] = ids.Length;
-                                        ids.Add(id);
+                                    if (!textured) {
+                                        uint id = Identifiers.ColorToId(voxel.color);
+                                        if (!data.colorIndices.ContainsKey(id)) {
+                                            data.colorIndices[id] = data.colors.Length;
+                                            data.colors.Add(voxel.color);
+                                            nIDs++;
+                                        }
                                     }
                                 }
                             }
                         }
-                        yRanges[meshX, meshZ] = new(min, max);
+                        yRanges[chunkX, chunkZ] = new(min, max);
                     }
                 }
+                if (textured) nIDs = 1;
 
-                // Generate all meshes
-                rows = new UnsafeArray<ulong>(chunkSize * chunkSize * 3, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
-                sides = new UnsafeArray<bool2>(chunkSize * chunkSize * 3, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
-                planes = new UnsafeArray<ulong>(chunkSize * chunkSize * ids.Length * 6, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
-                faces = new UnsafeList<VoxelFace>(0, Allocator.Temp);
-                for (int meshZ = 0; meshZ < nMeshesZ; meshZ++) {
-                    currentMeshStart.z = startZ + meshZ * meshSize;
-                    int meshEndZ = math.min(currentMeshStart.z + meshSize, startZ + sizeZ);
-                    int nChunksZ = (int)math.ceil((float)(meshEndZ - currentMeshStart.z) / chunkSize);
-                    for (int meshX = 0; meshX < nMeshesX; meshX++) {
-                        currentMeshStart.x = startX + meshX * meshSize;
-                        int meshEndX = math.min(currentMeshStart.x + meshSize, startX + sizeX);
-                        int nChunksX = (int)math.ceil((float)(meshEndX - currentMeshStart.x) / chunkSize);
-                        int2 yRange = yRanges[meshX, meshZ];
-                        int nMeshesY = (int)math.ceil((float)(yRange.y - yRange.x) / meshSize);
-                        for (int meshY = 0; meshY < nMeshesY; meshY++) {
-                            currentMeshStart.y = yRange.x + meshY * meshSize;
-                            int meshEndY = math.min(currentMeshStart.y + meshSize, yRange.y);
-                            int nChunksY = (int)math.ceil((float)(meshEndY - currentMeshStart.y) / chunkSize);
+                // Generate all chunks
+                rows = new UnsafeArray<ulong>(subChunkSize * subChunkSize * 3, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
+                sides = new UnsafeArray<bool2>(subChunkSize * subChunkSize * 3, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
+                planes = new UnsafeArray<ulong>(subChunkSize * subChunkSize * nIDs * 6, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
+                currentFaces = new UnsafeList<VoxelFace>(0, Allocator.Temp);
+                for (int chunkZ = 0; chunkZ < nChunksZ; chunkZ++) {
+                    currentChunkStart.z = startZ + chunkZ * chunkSize;
+                    int chunkEndZ = math.min(currentChunkStart.z + chunkSize, startZ + sizeZ);
+                    int nSubChunksZ = (int)math.ceil((float)(chunkEndZ - currentChunkStart.z) / subChunkSize);
+                    for (int chunkX = 0; chunkX < nChunksX; chunkX++) {
+                        currentChunkStart.x = startX + chunkX * chunkSize;
+                        int chunkEndX = math.min(currentChunkStart.x + chunkSize, startX + sizeX);
+                        int nSubChunksX = (int)math.ceil((float)(chunkEndX - currentChunkStart.x) / subChunkSize);
+                        int2 yRange = yRanges[chunkX, chunkZ];
+                        int nChunksY = (int)math.ceil((float)(yRange.y - yRange.x) / chunkSize);
+                        for (int chunkY = 0; chunkY < nChunksY; chunkY++) {
+                            currentChunkStart.y = yRange.x + chunkY * chunkSize;
+                            int chunkEndY = math.min(currentChunkStart.y + chunkSize, yRange.y);
+                            int nSubChunksY = (int)math.ceil((float)(chunkEndY - currentChunkStart.y) / subChunkSize);
 
                             // Generate all chunks
-                            meshes = new UnsafeArray<int2>(nChunksX * nChunksY * nChunksZ * 6, Allocator.Temp);
-                            meshIndex = 0;
-                            for (int chunkZ = 0; chunkZ < nChunksZ; chunkZ++) {
-                                currentChunkStart.z = currentMeshStart.z + chunkZ * chunkSize;
-                                currentChunkSize.z = math.min(chunkSize, meshEndZ - currentChunkStart.z);
-                                for (int chunkX = 0; chunkX < nChunksX; chunkX++) {
-                                    currentChunkStart.x = currentMeshStart.x + chunkX * chunkSize;
-                                    currentChunkSize.x = math.min(chunkSize, meshEndX - currentChunkStart.x);
-                                    for (int chunkY = 0; chunkY < nChunksY; chunkY++) {
-                                        currentChunkStart.y = yRange.x + chunkY * chunkSize;
-                                        currentChunkSize.y = math.min(chunkSize, yRange.y + 1 - currentChunkStart.y);
+                            chunks = new UnsafeArray<int2>(nSubChunksX * nSubChunksY * nSubChunksZ * 6, Allocator.Temp);
+                            chunkIndex = 0;
+                            for (int subChunkZ = 0; subChunkZ < nSubChunksZ; subChunkZ++) {
+                                currentSubChunkStart.z = currentChunkStart.z + subChunkZ * subChunkSize;
+                                currentSubChunkSize.z = math.min(subChunkSize, chunkEndZ - currentSubChunkStart.z);
+                                for (int subChunkX = 0; subChunkX < nSubChunksX; subChunkX++) {
+                                    currentSubChunkStart.x = currentChunkStart.x + subChunkX * subChunkSize;
+                                    currentSubChunkSize.x = math.min(subChunkSize, chunkEndX - currentSubChunkStart.x);
+                                    for (int subChunkY = 0; subChunkY < nSubChunksY; subChunkY++) {
+                                        currentSubChunkStart.y = yRange.x + subChunkY * subChunkSize;
+                                        currentSubChunkSize.y = math.min(subChunkSize, yRange.y + 1 - currentSubChunkStart.y);
 
                                         // Generate one chunk
                                         rows.Clear();
@@ -246,79 +315,77 @@ namespace Voxels.Rendering {
                                         planes.Clear();
                                         GenerateBinarySolidBlocks();
                                         GenerateBinaryPlanes();
-                                        GenerateOptimizedMesh();
-                                        meshIndex += 6;
+                                        GenerateOptimizedChunk();
+                                        chunkIndex += 6;
                                     }
                                 }
                             }
 
-                            GenerateMesh();
-                            faces.Clear();
+                            GenerateChunk();
+                            currentFaces.Clear();
                         }
                     }
                 }
 
                 yRanges.Dispose();
-                idIndex.Dispose();
-                ids.Dispose();
                 rows.Dispose();
                 sides.Dispose();
                 planes.Dispose();
-                faces.Dispose();
+                currentFaces.Dispose();
             }
 
 
             // rows: bit rows containing 1 if the block is solid, 0 otherwise
             // sides: 2 bools, first is true if the block before the row is solid, 0 otherwise, second is true if the block after the row is solid, 0 otherwise
-            // rows and sides contain chunkSize * chunkSize elements for each axis (x, z, y)
+            // rows and sides contain subChunkSize * subChunkSize elements for each axis (x, z, y)
             private void GenerateBinarySolidBlocks() {
                 // Rows and y sides
-                for (int z = 0; z < currentChunkSize.z; z++) {
-                    for (int x = 0; x < currentChunkSize.x; x++) {
+                for (int z = 0; z < currentSubChunkSize.z; z++) {
+                    for (int x = 0; x < currentSubChunkSize.x; x++) {
                         bool2 ySide = new(false, false);
-                        foreach (Voxel voxel in voxels.GetColumn(currentChunkStart.x + x, currentChunkStart.z + z)) {
-                            int y = voxel.y - currentChunkStart.y;
-                            if (y >= 0 && y < currentChunkSize.y) {
-                                rows[y + z * chunkSize] |= 1UL << x; // x
-                                rows[x + z * chunkSize + chunkSize * chunkSize] |= 1UL << y; // y
-                                rows[y + x * chunkSize + 2 * chunkSize * chunkSize] |= 1UL << z; // z
+                        foreach (Voxel voxel in voxels.GetColumn(currentSubChunkStart.x + x, currentSubChunkStart.z + z)) {
+                            int y = voxel.y - currentSubChunkStart.y;
+                            if (y >= 0 && y < currentSubChunkSize.y) {
+                                rows[y + z * subChunkSize] |= 1UL << x; // x
+                                rows[x + z * subChunkSize + subChunkSize * subChunkSize] |= 1UL << y; // y
+                                rows[y + x * subChunkSize + 2 * subChunkSize * subChunkSize] |= 1UL << z; // z
                             }
                             else if (y == -1) ySide.x = true;
-                            else if (y == chunkSize) ySide.y = true;
+                            else if (y == subChunkSize) ySide.y = true;
                         }
                     }
                 }
 
                 // x and z sides
-                if (currentChunkStart.x > 0) {
-                    for (int z = 0; z < currentChunkSize.z; z++) {
-                        foreach (Voxel voxel in voxels.GetColumn(currentChunkStart.x - 1, currentChunkStart.z + z)) {
-                            int y = voxel.y - currentChunkStart.y;
-                            if (y >= 0 && y < currentChunkSize.y) sides[y + z * chunkSize].x = true;
+                if (currentSubChunkStart.x > 0) {
+                    for (int z = 0; z < currentSubChunkSize.z; z++) {
+                        foreach (Voxel voxel in voxels.GetColumn(currentSubChunkStart.x - 1, currentSubChunkStart.z + z)) {
+                            int y = voxel.y - currentSubChunkStart.y;
+                            if (y >= 0 && y < currentSubChunkSize.y) sides[y + z * subChunkSize].x = true;
                         }
                     }
                 }
-                if (currentChunkStart.x + currentChunkSize.x < voxels.sizeX) {
-                    for (int z = 0; z < currentChunkSize.z; z++) {
-                        foreach (Voxel voxel in voxels.GetColumn(currentChunkStart.x + currentChunkSize.x, currentChunkStart.z + z)) {
-                            int y = voxel.y - currentChunkStart.y;
-                            if (y >= 0 && y < currentChunkSize.y) sides[y + z * chunkSize].y = true;
+                if (currentSubChunkStart.x + currentSubChunkSize.x < voxels.sizeX) {
+                    for (int z = 0; z < currentSubChunkSize.z; z++) {
+                        foreach (Voxel voxel in voxels.GetColumn(currentSubChunkStart.x + currentSubChunkSize.x, currentSubChunkStart.z + z)) {
+                            int y = voxel.y - currentSubChunkStart.y;
+                            if (y >= 0 && y < currentSubChunkSize.y) sides[y + z * subChunkSize].y = true;
                         }
                     }
                 }
-                if (currentChunkStart.z > 0) {
-                    for (int x = 0; x < currentChunkSize.x; x++) {
-                        foreach (Voxel voxel in voxels.GetColumn(currentChunkStart.x + x, currentChunkStart.z - 1)) {
-                            int y = voxel.y - currentChunkStart.y;
-                            if (y >= 0 && y < currentChunkSize.y) sides[y + x * chunkSize + 2 * chunkSize * chunkSize].x = true;
+                if (currentSubChunkStart.z > 0) {
+                    for (int x = 0; x < currentSubChunkSize.x; x++) {
+                        foreach (Voxel voxel in voxels.GetColumn(currentSubChunkStart.x + x, currentSubChunkStart.z - 1)) {
+                            int y = voxel.y - currentSubChunkStart.y;
+                            if (y >= 0 && y < currentSubChunkSize.y) sides[y + x * subChunkSize + 2 * subChunkSize * subChunkSize].x = true;
                         }
                     }
                 }
-                if (currentChunkStart.z + currentChunkSize.z < voxels.sizeZ) {
-                    for (int x = 0; x < currentChunkSize.x; x++) {
-                        foreach (Voxel voxel in voxels.GetColumn(currentChunkStart.x + x, currentChunkStart.z + currentChunkSize.z)) {
-                            int y = voxel.y - currentChunkStart.y;
-                            if (y >= 0 && y < currentChunkSize.y) sides[y + x * chunkSize + 2 * chunkSize * chunkSize].y = true;
+                if (currentSubChunkStart.z + currentSubChunkSize.z < voxels.sizeZ) {
+                    for (int x = 0; x < currentSubChunkSize.x; x++) {
+                        foreach (Voxel voxel in voxels.GetColumn(currentSubChunkStart.x + x, currentSubChunkStart.z + currentSubChunkSize.z)) {
+                            int y = voxel.y - currentSubChunkStart.y;
+                            if (y >= 0 && y < currentSubChunkSize.y) sides[y + x * subChunkSize + 2 * subChunkSize * subChunkSize].y = true;
                         }
                     }
                 }
@@ -326,7 +393,7 @@ namespace Voxels.Rendering {
 
 
             // planes: 64 bits rows containing 1 if the face must be rendered, 0 otherwise
-            // planes contains chunkSize (rows in one plane) * chunkSize (planes in one direction) * nbrIDs * 6 (x+, z+, y+, x-, z-, y-)
+            // planes contains subChunkSize (rows in one plane) * subChunkSize (planes in one direction) * nIDs * 6 (x+, z+, y+, x-, z-, y-)
             private void GenerateBinaryPlanes() {
                 GenerateAxisBinaryPlanes(0);
                 GenerateAxisBinaryPlanes(1);
@@ -336,12 +403,12 @@ namespace Voxels.Rendering {
 
             // Generate binary planes for one axis
             private void GenerateAxisBinaryPlanes(int axis) {
-                int3 beforeX = currentChunkStart;
-                for (int y = 0; y < currentChunkSize[VoxelNormals.HeightAxis(axis)]; y++) {
+                int3 beforeX = currentSubChunkStart;
+                for (int y = 0; y < currentSubChunkSize[VoxelNormals.HeightAxis(axis)]; y++) {
                     int3 pos = beforeX;
-                    for (int x = 0; x < currentChunkSize[VoxelNormals.WidthAxis(axis)]; x++) {
-                        ulong row = rows[x + y * chunkSize + axis * chunkSize * chunkSize];
-                        bool2 side = sides[x + y * chunkSize + axis * chunkSize * chunkSize];
+                    for (int x = 0; x < currentSubChunkSize[VoxelNormals.WidthAxis(axis)]; x++) {
+                        ulong row = rows[x + y * subChunkSize + axis * subChunkSize * subChunkSize];
+                        bool2 side = sides[x + y * subChunkSize + axis * subChunkSize * subChunkSize];
 
                         // Find faces to render in negative direction and add them to planes
                         ulong shiftedRow = row << 1;
@@ -359,8 +426,8 @@ namespace Voxels.Rendering {
                                 if (axis == 2 && next.z < 0) continue;
                                 if (next.y < voxels.GetMin(next.xz)) continue;
                             }
-                            uint id = generator.MergeIdentifier(voxels.GetVoxel(posDepth));
-                            planes[y + depth * chunkSize + idIndex[id] * chunkSize * chunkSize + 2 * axis * chunkSize * chunkSize * ids.Length] |= 1UL << x;
+                            int index = textured ? 0 : data.colorIndices[Identifiers.ColorToId(voxels.GetVoxel(posDepth))];
+                            planes[y + depth * subChunkSize + index * subChunkSize * subChunkSize + 2 * axis * subChunkSize * subChunkSize * nIDs] |= 1UL << x;
                         }
 
                         // Find faces to render in positive direction and add them to planes
@@ -379,8 +446,8 @@ namespace Voxels.Rendering {
                                 if (axis == 2 && next.z >= voxels.sizeZ) continue;
                                 if (next.y < voxels.GetMin(next.xz)) continue;
                             }
-                            uint id = generator.MergeIdentifier(voxels.GetVoxel(posDepth));
-                            planes[y + depth * chunkSize + idIndex[id] * chunkSize * chunkSize + (2 * axis + 1) * chunkSize * chunkSize * ids.Length] |= 1UL << x;
+                            int index = textured ? 0 : data.colorIndices[Identifiers.ColorToId(voxels.GetVoxel(posDepth))];
+                            planes[y + depth * subChunkSize + index * subChunkSize * subChunkSize + (2 * axis + 1) * subChunkSize * subChunkSize * nIDs] |= 1UL << x;
                         }
 
                         pos[VoxelNormals.WidthAxis(axis)]++;
@@ -390,53 +457,53 @@ namespace Voxels.Rendering {
             }
 
 
-            // Generate the mesh for each plane
-            private void GenerateOptimizedMesh() {
-                GenerateNormalOptimizedMesh(VoxelNormal.XNegative);
-                GenerateNormalOptimizedMesh(VoxelNormal.XPositive);
-                GenerateNormalOptimizedMesh(VoxelNormal.YNegative);
-                GenerateNormalOptimizedMesh(VoxelNormal.YPositive);
-                GenerateNormalOptimizedMesh(VoxelNormal.ZNegative);
-                GenerateNormalOptimizedMesh(VoxelNormal.ZPositive);
+            // Generate the chunk for each plane
+            private void GenerateOptimizedChunk() {
+                GenerateNormalOptimizedChunk(VoxelNormal.XNegative);
+                GenerateNormalOptimizedChunk(VoxelNormal.XPositive);
+                GenerateNormalOptimizedChunk(VoxelNormal.YNegative);
+                GenerateNormalOptimizedChunk(VoxelNormal.YPositive);
+                GenerateNormalOptimizedChunk(VoxelNormal.ZNegative);
+                GenerateNormalOptimizedChunk(VoxelNormal.ZPositive);
             }
 
 
-            // Generate the mesh for a normal
-            private void GenerateNormalOptimizedMesh(VoxelNormal normal) {
-                int startFace = faces.Length;
-                for (int i = 0; i < ids.Length; i++) {
-                    for (int depth = 0; depth < currentChunkSize[VoxelNormals.Axis(normal)]; depth++) {
+            // Generate the chunk for a normal
+            private void GenerateNormalOptimizedChunk(VoxelNormal normal) {
+                int startFace = currentFaces.Length;
+                for (int i = 0; i < nIDs; i++) {
+                    for (int depth = 0; depth < currentSubChunkSize[VoxelNormals.Axis(normal)]; depth++) {
                         GenerateOptimizedPlane(normal, depth, i);
                     }
                 }
-                meshes[meshIndex + (int)normal] = new int2(startFace, faces.Length);
+                chunks[chunkIndex + (int)normal] = new int2(startFace, currentFaces.Length);
             }
 
 
-            // Generate the mesh for a plane and an ID
+            // Generate the chunk for a plane and an ID
             private void GenerateOptimizedPlane(VoxelNormal normal, int depth, int index) {
-                int startIndex = (int)normal * chunkSize * chunkSize * ids.Length + index * chunkSize * chunkSize + depth * chunkSize;
-                int3 beforeX = currentChunkStart;
+                int startIndex = (int)normal * subChunkSize * subChunkSize * nIDs + index * subChunkSize * subChunkSize + depth * subChunkSize;
+                int3 beforeX = currentSubChunkStart;
                 beforeX[VoxelNormals.Axis(normal)] += depth;
-                for (int y = 0; y < currentChunkSize[VoxelNormals.HeightAxis(normal)]; y++) {
+                for (int y = 0; y < currentSubChunkSize[VoxelNormals.HeightAxis(normal)]; y++) {
                     int3 pos = beforeX;
                     ulong row = planes[startIndex + y];
                     int x = math.tzcnt(row);
                     pos[VoxelNormals.WidthAxis(normal)] += x;
-                    while (x < currentChunkSize[VoxelNormals.WidthAxis(normal)]) {
+                    while (x < currentSubChunkSize[VoxelNormals.WidthAxis(normal)]) {
                         int width = math.tzcnt(~(row >> x)); // Expand in x
                         ulong checkMask = (row << (64 - width - x)) >> (64 - width - x);
                         ulong deleteMask = ~checkMask;
 
                         int height = 1;
-                        while (y + height < currentChunkSize[VoxelNormals.HeightAxis(normal)]) { // Expand in y
+                        while (y + height < currentSubChunkSize[VoxelNormals.HeightAxis(normal)]) { // Expand in y
                             ref ulong nextRow = ref planes[startIndex + y + height];
                             if ((nextRow & checkMask) != checkMask) break;
                             nextRow &= deleteMask;
                             height++;
                         }
 
-                        faces.Add(new VoxelFace(pos - currentMeshStart, width, height, normal, 0));
+                        currentFaces.Add(new VoxelFace(pos - currentChunkStart, width, height, normal, index));
 
                         int prevX = x;
                         x += width;
@@ -448,46 +515,57 @@ namespace Voxels.Rendering {
             }
 
 
-            // Split and merge meshes and generate final output
-            private void GenerateMesh() {
+            // Split and merge sub-chunks and generate final output
+            private void GenerateChunk() {
                 int normalIndex = 0;
-                int meshIndex = 0;
+                int chunkIndex = 0;
                 int faceIndex = 0;
                 while (normalIndex < 6) {
                     int3 min = int.MaxValue;
                     int3 max = int.MinValue;
-                    VoxelNormal meshNormal = VoxelNormal.None;
+                    VoxelNormal chunkNormal = VoxelNormal.None;
                     int faceCount = 0;
-                    generator.StartMesh(currentMeshStart);
+                    int startColor = data.colors.Length;
 
-                    // Add all faces of a mesh
+                    // Add all faces of a chunk
                     while (faceCount < VoxelRenderer.maxFaceCount) {
-                        // Next mesh
-                        if (faceIndex == meshes[meshIndex].y) { // Next mesh
-                            meshIndex += 6;
-                            if (meshIndex >= meshes.length) { // Next normal
+                        if (faceIndex == chunks[chunkIndex].y) { // Next chunk
+                            chunkIndex += 6;
+                            if (chunkIndex >= chunks.length) { // Next normal
                                 normalIndex++;
                                 if (normalIndex == 6) break; // End
-                                meshIndex = normalIndex;
-                                if (faceCount > 0 && faces.Length > mergeNormalsThreshold) { // Generate mesh for this normal
-                                    faceIndex = meshes[meshIndex].x;
+                                chunkIndex = normalIndex;
+                                if (faceCount > 0 && currentFaces.Length > mergeNormalsThreshold) { // Generate chunk for this normal
+                                    faceIndex = chunks[chunkIndex].x;
                                     break;
                                 }
                             }
-                            faceIndex = meshes[meshIndex].x;
+                            faceIndex = chunks[chunkIndex].x;
                             continue;
                         }
 
                         // Add face
-                        VoxelFace face = faces[faceIndex];
-                        int3 pos = currentMeshStart + new int3(face.X, face.Y, face.Z);
+                        VoxelFace face = currentFaces[faceIndex];
+                        int3 pos = face.Position;
                         int width = face.Width;
                         int height = face.Height;
                         VoxelNormal normal = face.Normal;
-                        if (!generator.AddFace(voxels, pos, width, height, normal)) break;
-                        if (meshNormal == VoxelNormal.None) meshNormal = normal;
-                        else if (meshNormal != normal) meshNormal = VoxelNormal.Any;
-                        int3 faceMin = pos;
+                        if (textured) {
+                            if (data.colors.Length - startColor + width * height - 1 > VoxelFace.maxColor) break;
+                            data.faces.Add(new VoxelFace(pos, width, height, normal, data.colors.Length - startColor));
+                            for (int x = 0; x < width; x++) {
+                                for (int y = 0; y < height; y++) {
+                                    int3 texturePos = currentChunkStart + pos;
+                                    texturePos[VoxelNormals.WidthAxis(normal)] += x;
+                                    texturePos[VoxelNormals.HeightAxis(normal)] += y;
+                                    data.colors.Add(voxels.GetVoxel(texturePos));
+                                }
+                            }
+                        }
+                        else data.faces.Add(face);
+                        if (chunkNormal == VoxelNormal.None) chunkNormal = normal;
+                        else if (chunkNormal != normal) chunkNormal = VoxelNormal.Any;
+                        int3 faceMin = currentChunkStart + pos;
                         if (VoxelNormals.Positive(normal)) faceMin[VoxelNormals.Axis(normal)]++;
                         int3 faceMax = faceMin;
                         faceMax[VoxelNormals.WidthAxis(normal)] += width;
@@ -499,288 +577,38 @@ namespace Voxels.Rendering {
                     }
 
                     if (faceCount > 0) {
-                        generator.AddMesh(offset, offset + (float3)(max + min) / 2f, (float3)(max - min) / 2f, meshNormal, startFace, faceCount);
+                        data.chunks.Add(new VoxelChunk(
+                            offset + (float3)(max + min) / 2f, (float3)(max - min) / 2f, offset + currentChunkStart,
+                            startColor, chunkNormal, startFace, faceCount, 0, 0, 0
+                        ));
                         startFace += faceCount;
                     }
                 }
             }
         }
-    
-    
-
-        [BurstCompile]
-        private readonly struct ResultJob : IJob {
-            private readonly Result result;
-            [ReadOnly] private readonly UnsafeArray<Generator> generators;
-
-            public ResultJob(Result result, UnsafeArray<Generator> generators) {
-                this.result = result;
-                this.generators = generators;
-            }
-
-            public readonly void Execute() => result.Add(generators);
-        }
-    }
 
 
 
-    /// <summary>
-    /// Implementation of a specific generator
-    /// </summary>
-    internal interface IMeshGenerator {
-        void Init();
-        void Dispose();
-        
-        /// <summary>
-        /// Get an identifier for a voxel.
-        /// Faces with the same identifier can be merged.
-        /// </summary>
-        uint MergeIdentifier(Color32 voxel);
-
-        /// <summary>
-        /// Start generating a mesh
-        /// </summary>
-        /// <param name="meshStart">Start position of the mesh</param>
-        void StartMesh(int3 meshStart);
-
-        /// <summary>
-        /// Add a face to the mesh
-        /// </summary>
-        /// <returns>Whether the face can be added in the current mesh</returns>
-        bool AddFace(VoxelColumns voxels, int3 pos, int width, int height, VoxelNormal normal);
-
-        /// <summary>
-        /// Stop generating the mesh and add it
-        /// </summary>
-        void AddMesh(float3 offset, float3 center, float3 size, VoxelNormal normal, int startFace, int faceCount);
-    }
-
-
-    internal interface IMeshResult<Generator> where Generator : unmanaged, IMeshGenerator {
-        void Init();
-        void Dispose();
-
-        /// <summary>
-        /// Add the result of multiple generators
-        /// </summary>
-        void Add(UnsafeArray<Generator> generators);
-    }
-
-
-
-    internal class TerrainMeshGenerator : MeshGenerator<TerrainMeshGenerator.Generator, TerrainMeshGenerator.Result> {
-        public TerrainMeshGenerator(int meshSize = 64, int mergeNormalsThreshold = 256, int jobHorizontalSize = int.MaxValue) :
-            base(default, meshSize, mergeNormalsThreshold, jobHorizontalSize, true) {}
-        public void Generate(VoxelColumns voxels, float3 offset) => Generate(voxels, offset, default);
-
-
-        internal struct Data {
+        internal struct MeshData {
             public NativeList<VoxelFace> faces;
-            public NativeList<VoxelMesh> meshes;
+            public NativeList<VoxelChunk> chunks;
             public NativeList<Color32> colors;
             public NativeHashMap<uint, int> colorIndices;
 
-            public void Init() {
+            public MeshData(bool _) {
                 faces = new(Allocator.Persistent);
-                meshes = new(Allocator.Persistent);
+                chunks = new(Allocator.Persistent);
                 colors = new(Allocator.Persistent);
                 colorIndices = new(0, Allocator.Persistent);
             }
 
             public void Dispose() {
                 faces.Dispose();
-                meshes.Dispose();
+                chunks.Dispose();
                 colors.Dispose();
                 colorIndices.Dispose();
             }
         }
-
-
-        internal struct Generator : IMeshGenerator {
-            [NativeDisableContainerSafetyRestriction] public Data data;
-            private int3 meshStart;
-
-            public void Init() => data.Init();
-            public void Dispose() => data.Dispose();
-            public readonly uint MergeIdentifier(Color32 voxel) => Identifiers.ColorToId(voxel);
-            public void StartMesh(int3 meshStart) => this.meshStart = meshStart;
-
-            public bool AddFace(VoxelColumns voxels, int3 pos, int width, int height, VoxelNormal normal) {
-                Color32 color = voxels.GetVoxel(pos);
-                uint id = Identifiers.ColorToId(color);
-                if (!data.colorIndices.TryGetValue(id, out int index)) {
-                    index = data.colors.Length;
-                    data.colorIndices[id] = index;
-                    data.colors.Add(color);
-                }
-                data.faces.Add(new VoxelFace(pos - meshStart, width, height, normal, index));
-                return true;
-            }
-
-            public void AddMesh(float3 offset, float3 center, float3 size, VoxelNormal normal, int startFace, int faceCount)
-                => data.meshes.Add(new VoxelMesh(center, size, offset + meshStart, normal, faceCount, startFace));
-        }
-
-
-        internal struct Result : IMeshResult<Generator> {
-            public Data data;
-
-            public void Init() => data.Init();
-            public void Dispose() => data.Dispose();
-
-            public void Add(UnsafeArray<Generator> generators) {
-                // Increase capacity
-                int addedFaces = 0;
-                int addedMeshes = 0;
-                foreach (Generator generator in generators) {
-                    addedFaces += generator.data.faces.Length;
-                    addedMeshes += generator.data.meshes.Length;
-                }
-                data.faces.Capacity = data.faces.Length + addedFaces;
-                data.meshes.Capacity = data.meshes.Length + addedMeshes;
-
-                foreach (Generator generator in generators) {
-                    // Merge colors
-                    UnsafeArray<int> colorMap = new(generator.data.colors.Length, Allocator.Temp);
-                    foreach (KVPair<uint, int> kv in generator.data.colorIndices) {
-                        if (data.colorIndices.TryGetValue(kv.Key, out int index)) {
-                            colorMap[kv.Value] = index;
-                        }
-                        else {
-                            colorMap[kv.Value] = data.colorIndices.Count;
-                            data.colorIndices[kv.Key] = data.colorIndices.Count;
-                            data.colors.Add(Identifiers.IdToColor(kv.Key));
-                        }
-                    }
-                    if (data.colorIndices.Count > VoxelFace.maxColor) throw new InvalidOperationException($"Number of colors can't exceed {VoxelFace.maxColor}");
-
-                    // Modify and add faces and meshes
-                    int startFace = data.faces.Length;
-                    foreach (VoxelFace face in generator.data.faces) {
-                        data.faces.Add(new VoxelFace(
-                            new(face.X, face.Y, face.Z), face.Width, face.Height, face.Normal,
-                            colorMap[face.Color]
-                        ));
-                    }
-                    foreach (VoxelMesh mesh in generator.data.meshes) {
-                        data.meshes.Add(new VoxelMesh(
-                            mesh.center, mesh.size, mesh.position, mesh.Normal, mesh.FaceCount,
-                            mesh.StartFace + startFace
-                        ));
-                    }
-                }
-            }
-        }
-
-
-        public NativeArray<VoxelFace> Faces => result.data.faces.AsArray();
-        public NativeArray<VoxelMesh> Meshes => result.data.meshes.AsArray();
-        public NativeArray<Color32> Colors => result.data.colors.AsArray();
-    }
-
-
-
-    internal class ObjectMeshGenerator : MeshGenerator<ObjectMeshGenerator.Generator, ObjectMeshGenerator.Result> {
-        public ObjectMeshGenerator(int meshSize = 64, int mergeNormalsThreshold = 256, int jobHorizontalSize = int.MaxValue) :
-            base(default, meshSize, mergeNormalsThreshold, jobHorizontalSize, false) {}
-
-        public void Generate(VoxelColumns voxels, float3 offset, int startInstance)
-            => Generate(voxels, offset, new Generator() { startInstance = startInstance });
-
-
-        internal struct Data {
-            public NativeList<VoxelFace> faces;
-            public NativeList<ObjectMesh> meshes;
-            public NativeList<Color32> colors;
-
-            public void Init() {
-                faces = new(Allocator.Persistent);
-                meshes = new(Allocator.Persistent);
-                colors = new(Allocator.Persistent);
-            }
-
-            public void Dispose() {
-                faces.Dispose();
-                meshes.Dispose();
-                colors.Dispose();
-            }
-        }
-
-
-        internal struct Generator : IMeshGenerator {
-            [NativeDisableContainerSafetyRestriction] public Data data;
-            private int3 meshStart;
-            private int startColor;
-            public int startInstance;
-
-            public void Init() => data.Init();
-            public void Dispose() => data.Dispose();
-            public readonly uint MergeIdentifier(Color32 voxel) => 0;
-
-            public void StartMesh(int3 meshStart) {
-                this.meshStart = meshStart;
-                startColor = data.colors.Length;
-            }
-
-            public bool AddFace(VoxelColumns voxels, int3 pos, int width, int height, VoxelNormal normal) {
-                if (data.colors.Length - startColor + width * height - 1 > VoxelFace.maxColor) return false;
-                data.faces.Add(new VoxelFace(pos - meshStart, width, height, normal, data.colors.Length - startColor));
-                for (int x = 0; x < width; x++) {
-                    for (int y = 0; y < height; y++) {
-                        int3 texturePos = pos;
-                        texturePos[VoxelNormals.WidthAxis(normal)] += x;
-                        texturePos[VoxelNormals.HeightAxis(normal)] += y;
-                        data.colors.Add(voxels.GetVoxel(texturePos));
-                    }
-                }
-                return true;
-            }
-
-            public void AddMesh(float3 offset, float3 center, float3 size, VoxelNormal normal, int startFace, int faceCount)
-                => data.meshes.Add(new ObjectMesh(center, size, offset + meshStart, normal, faceCount, startFace, startColor, startInstance));
-        }
-
-
-        internal struct Result : IMeshResult<Generator> {
-            public Data data;
-
-            public void Init() => data.Init();
-            public void Dispose() => data.Dispose();
-
-            public void Add(UnsafeArray<Generator> generators) {
-                // Increase capacity
-                int addedFaces = 0;
-                int addedMeshes = 0;
-                int addedColors = 0;
-                foreach (Generator generator in generators) {
-                    addedFaces += generator.data.faces.Length;
-                    addedMeshes += generator.data.meshes.Length;
-                    addedColors += generator.data.colors.Length;
-                }
-                data.faces.Capacity = data.faces.Length + addedFaces;
-                data.meshes.Capacity = data.meshes.Length + addedMeshes;
-                data.colors.Capacity = data.meshes.Length + addedColors;
-
-                // Add faces and colors and add and modify meshes
-                foreach (Generator generator in generators) {
-                    int startFace = data.faces.Length;
-                    int startColor = data.colors.Length;
-                    data.faces.AddRange(generator.data.faces.AsArray());
-                    data.colors.AddRange(generator.data.colors.AsArray());
-                    foreach (ObjectMesh mesh in generator.data.meshes) {
-                        data.meshes.Add(new ObjectMesh(
-                            mesh.mesh.center, mesh.mesh.size, mesh.mesh.position, mesh.mesh.Normal, mesh.mesh.FaceCount,
-                            mesh.mesh.StartFace + startFace, mesh.StartColor + startColor, mesh.StartInstance
-                        ));
-                    }
-                }
-            }
-        }
-
-
-        public NativeArray<VoxelFace> Faces => result.data.faces.AsArray();
-        public NativeArray<ObjectMesh> Meshes => result.data.meshes.AsArray();
-        public NativeArray<Color32> Colors => result.data.colors.AsArray();
     }
 
 
