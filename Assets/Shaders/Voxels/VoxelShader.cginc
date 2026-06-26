@@ -157,15 +157,18 @@ VoxelV2F voxelVertex(VoxelData d) {
     extruded1 /= extruded1.w;
     float4 extruded2 = o.vertex + mul(UNITY_MATRIX_VP, float4(d.tangent2, 0));
     extruded2 /= extruded2.w;
-    float2 vertex = o.vertex.xy / o.vertex.w;
-    float2 tangent1 = extruded1.xy - vertex;
-    float2 tangent2 = extruded2.xy - vertex;
+    float3 vertex = o.vertex.xyz / o.vertex.w;
+    float3 tangent1 = extruded1.xyz - vertex;
+    float3 tangent2 = extruded2.xyz - vertex;
+    tangent1.xy *= _ScreenParams.xy;
+    tangent2.xy *= _ScreenParams.xy;
+    tangent1 /= length(tangent1.xy);
+    tangent2 /= length(tangent2.xy);
     float2 normal1 = float2(tangent1.y, -tangent1.x);
-    float2 normal2 = float2(tangent2.y, -tangent2.x);
-    normal1 /= length(normal1 * _ScreenParams.xy);
-    normal2 /= length(normal2 * _ScreenParams.xy);
-    float2 extrude = (normal1 + normal2) * quadsInterleaving * 2 * o.vertex.w;
-    o.vertex.xy += extrude;
+    float3 smoothNormal = tangent1 - tangent2;
+    float3 extrude = smoothNormal * clamp(1 / dot(normal1, smoothNormal.xy), -1, 1);
+    extrude.xy /= _ScreenParams.xy;
+    o.vertex.xyz += extrude * quadsInterleaving * o.vertex.w;
 
     return o;
 }
