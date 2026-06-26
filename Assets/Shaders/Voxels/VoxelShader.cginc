@@ -43,7 +43,8 @@ struct VoxelData {
     uint width; // Face size
     uint height;
     uint lightLevel;
-    float3 smoothNormal; // Sum of the normals of both edges of the face
+    float3 tangent1;
+    float3 tangent2;
 #ifdef _VOXEL_TEXTURE_ON
     float2 facePosition; // Position in the face
     uint colorIndex;
@@ -89,8 +90,11 @@ VoxelData unpackVertex(uint vertexID: SV_VertexID, uint instanceID: SV_InstanceI
     uint heightAxis = AXIS_HEIGHT(normalAxis);
 
     // Position
-    uint incWidth = (uint(vertexID) & 1u) ^ uint(normalAxis != 0) ^ NORMAL_NEGATIVE(normalID);
-    uint incHeight = vertexID >> 1;
+    uint vertexID1 = vertexID & 1u;
+    uint vertexID2 = vertexID >> 1;
+    uint revertWidth = uint(normalAxis != 0) ^ NORMAL_NEGATIVE(normalID);
+    uint incWidth = vertexID1 ^ revertWidth;
+    uint incHeight = vertexID2;
     float positionArr[3] = { position.x, position.y, position.z };
     positionArr[normalAxis] += NORMAL_POSITIVE(normalID);
     if (incWidth) positionArr[widthAxis] += width;
@@ -98,10 +102,12 @@ VoxelData unpackVertex(uint vertexID: SV_VertexID, uint instanceID: SV_InstanceI
     position = float3(positionArr[0], positionArr[1], positionArr[2]);
 
     // Interleaving
-    float smoothNormalArr[3] = { 0, 0, 0 };
-    smoothNormalArr[widthAxis] = 2 * (float)incWidth - 1;
-    smoothNormalArr[heightAxis] = 2 * (float)incHeight - 1;
-    float3 smoothNormal = float3(smoothNormalArr[0], smoothNormalArr[1], smoothNormalArr[2]);
+    float tangent1Arr[3] = { 0, 0, 0 };
+    tangent1Arr[widthAxis] += 2 * (float)(vertexID2 ^ revertWidth) - 1;
+    float3 tangent1 = float3(tangent1Arr[0], tangent1Arr[1], tangent1Arr[2]);
+    float tangent2Arr[3] = { 0, 0, 0 };
+    tangent2Arr[heightAxis] += 1 - 2 * (float)vertexID1;
+    float3 tangent2 = float3(tangent2Arr[0], tangent2Arr[1], tangent2Arr[2]);
 
     // Transform
 #ifdef _VOXEL_TRANSFORM_ON
@@ -111,7 +117,8 @@ VoxelData unpackVertex(uint vertexID: SV_VertexID, uint instanceID: SV_InstanceI
     float4x4 transform = renderedTransforms[cmd];
 #endif
     position = mul(transform, float4(position, 1)).xyz;
-    smoothNormal = mul(transform, float4(smoothNormal, 0)).xyz;
+    tangent1 = mul(transform, float4(tangent1, 0)).xyz;
+    tangent2 = mul(transform, float4(tangent2, 0)).xyz;
 #endif
 
     VoxelData o;
@@ -120,7 +127,8 @@ VoxelData unpackVertex(uint vertexID: SV_VertexID, uint instanceID: SV_InstanceI
     o.width = width;
     o.height = height;
     o.lightLevel = lightLevels[normalID];
-    o.smoothNormal = smoothNormal;
+    o.tangent1 = tangent1;
+    o.tangent2 = tangent2;
 #ifdef _VOXEL_TEXTURE_ON
     o.facePosition = uint2(incWidth, incHeight) * uint2(width, height);
     o.colorIndex = colorID + offset.color;
@@ -145,8 +153,19 @@ VoxelV2F voxelVertex(VoxelData d) {
     o.vertex = mul(UNITY_MATRIX_VP, o.vertex);
 
     // Interleaving
-    float3 extrude = mul(UNITY_MATRIX_VP, float4(d.smoothNormal, 0)).xyz;
-    o.vertex.xy += normalize(extrude.xy) / _ScreenParams.xy * quadsInterleaving * o.vertex.w * 2;
+    float4 extruded1 = o.vertex + mul(UNITY_MATRIX_VP, float4(d.tangent1, 0));
+    extruded1 /= extruded1.w;
+    float4 extruded2 = o.vertex + mul(UNITY_MATRIX_VP, float4(d.tangent2, 0));
+    extruded2 /= extruded2.w;
+    float2 vertex = o.vertex.xy / o.vertex.w;
+    float2 tangent1 = extruded1.xy - vertex;
+    float2 tangent2 = extruded2.xy - vertex;
+    float2 normal1 = float2(tangent1.y, -tangent1.x);
+    float2 normal2 = float2(tangent2.y, -tangent2.x);
+    normal1 /= length(normal1 * _ScreenParams.xy);
+    normal2 /= length(normal2 * _ScreenParams.xy);
+    float2 extrude = (normal1 + normal2) * quadsInterleaving * 2 * o.vertex.w;
+    o.vertex.xy += extrude;
 
     return o;
 }

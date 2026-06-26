@@ -40,7 +40,8 @@ namespace Voxels.Rendering {
         }
 
         private void OnValidate() {
-            ShaderID.SetKeywords(cullingShader);            
+            ShaderID.SetKeywords(cullingShader);
+            QuadsInterleaving = quadsInterleaving;
         }
 
 

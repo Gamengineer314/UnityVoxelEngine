@@ -1,3 +1,4 @@
+#if UNITY_EDITOR
 using UnityEngine;
 using UnityEditor;
 using Voxels.Rendering;
@@ -32,3 +33,4 @@ public class VoxelRendererEditor : Editor {
         serializedObject.ApplyModifiedProperties();
     }
 }
+#endif
