@@ -154,21 +154,22 @@ VoxelV2F voxelVertex(VoxelData d) {
 
     // Interleaving
     float4 extruded1 = o.vertex + mul(UNITY_MATRIX_VP, float4(d.tangent1, 0));
-    extruded1 /= extruded1.w;
     float4 extruded2 = o.vertex + mul(UNITY_MATRIX_VP, float4(d.tangent2, 0));
-    extruded2 /= extruded2.w;
-    float3 vertex = o.vertex.xyz / o.vertex.w;
-    float3 tangent1 = extruded1.xyz - vertex;
-    float3 tangent2 = extruded2.xyz - vertex;
-    tangent1.xy *= _ScreenParams.xy;
-    tangent2.xy *= _ScreenParams.xy;
-    tangent1 /= length(tangent1.xy);
-    tangent2 /= length(tangent2.xy);
+    float2 vertex = o.vertex.xy / o.vertex.w;
+    float2 tangent1 = extruded1.xy / extruded1.w - vertex;
+    float2 tangent2 = extruded2.xy / extruded2.w - vertex;
+    tangent1 *= _ScreenParams.xy;
+    tangent2 *= _ScreenParams.xy;
+    tangent1 /= length(tangent1);
+    tangent2 /= length(tangent2);
+#if defined(SHADER_API_GLCORE) || defined(SHADER_API_GLES) || defined(SHADER_API_GLES3)
     float2 normal1 = float2(tangent1.y, -tangent1.x);
-    float3 smoothNormal = tangent1 - tangent2;
-    float3 extrude = smoothNormal * clamp(1 / dot(normal1, smoothNormal.xy), -1, 1);
-    extrude.xy /= _ScreenParams.xy;
-    o.vertex.xyz += extrude * quadsInterleaving * o.vertex.w;
+#else
+    float2 normal1 = float2(-tangent1.y, tangent1.x);
+#endif
+    float2 smoothNormal = tangent1 - tangent2;
+    float2 extrude = smoothNormal * clamp(1 / dot(normal1, smoothNormal), -2, 2);
+    o.vertex.xy += extrude * quadsInterleaving * o.vertex.w / _ScreenParams.xy;
 
     return o;
 }
