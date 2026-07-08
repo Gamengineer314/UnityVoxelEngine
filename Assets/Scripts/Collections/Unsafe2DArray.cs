@@ -1,10 +1,9 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
-using Unity.Collections;
 using Unity.Mathematics;
 
-namespace Voxels.Collections {
+namespace Unity.Collections.LowLevel.Unsafe {
 
     /// <summary>
     /// 2D array stored in a 1D NativeArray
@@ -20,34 +19,24 @@ namespace Voxels.Collections {
             this.sizeY = sizeY;
         }
 
-        public void Dispose() => array.Dispose();
+        public readonly void Dispose() => array.Dispose();
 
-        public T this[int x, int y] {
-            readonly get {
+        public ref T this[int x, int y] {
+            get {
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
                 if (x < 0 || x >= sizeX) throw new IndexOutOfRangeException($"X coordinate {x} is out of range of Native2DArray of sizeX {sizeX}");
                 if (y < 0 || y >= sizeY) throw new IndexOutOfRangeException($"Y coordinate {y} is out of range of Native2DArray of sizeY {sizeY}");
 #endif
-                return array[x + sizeX * y];
-            }
-            set {
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-                if (x < 0 || x >= sizeX) throw new IndexOutOfRangeException($"X coordinate {x} is out of range of Native2DArray of sizeX {sizeX}");
-                if (y < 0 || y >= sizeY) throw new IndexOutOfRangeException($"Y coordinate {y} is out of range of Native2DArray of sizeY {sizeY}");
-#endif
-                array[x + sizeX * y] = value;
+                return ref array[x + sizeX * y];
             }
         }
 
-        public T this[int2 coords] {
-            readonly get => this[coords.x, coords.y];
-            set => this[coords.x, coords.y] = value;
-        }
+        public ref T this[int2 coords] => ref this[coords.x, coords.y];
 
         public readonly UnsafeArray<T> Array => array;
-        public UnsafeArray<T>.Enumerator GetEnumerator() => array.GetEnumerator();
-        IEnumerator<T> IEnumerable<T>.GetEnumerator() => GetEnumerator();
-        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+        public readonly UnsafeArray<T>.Enumerator GetEnumerator() => array.GetEnumerator();
+        readonly IEnumerator<T> IEnumerable<T>.GetEnumerator() => GetEnumerator();
+        readonly IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
     }
 
 }

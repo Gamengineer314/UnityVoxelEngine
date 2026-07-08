@@ -14,6 +14,7 @@ namespace Voxels.Rendering {
     /// <summary>
     /// Mesh generator from voxel collections
     /// </summary>
+    [BurstCompile]
     internal class MeshGenerator {
         private readonly GenerationParameters parameters;
         private readonly bool textured;

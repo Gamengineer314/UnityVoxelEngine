@@ -1,10 +1,9 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
-using Unity.Collections;
 using Unity.Mathematics;
 
-namespace Voxels.Collections {
+namespace Unity.Collections {
 
     /// <summary>
     /// 2D array stored in a 1D NativeArray
@@ -46,9 +45,9 @@ namespace Voxels.Collections {
 
         public readonly NativeArray<T> Array => array;
         public readonly bool IsCreated => array.IsCreated;
-        public NativeArray<T>.Enumerator GetEnumerator() => array.GetEnumerator();
-        IEnumerator<T> IEnumerable<T>.GetEnumerator() => GetEnumerator();
-        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+        public readonly NativeArray<T>.Enumerator GetEnumerator() => array.GetEnumerator();
+        readonly IEnumerator<T> IEnumerable<T>.GetEnumerator() => GetEnumerator();
+        readonly IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
     }
 
 }

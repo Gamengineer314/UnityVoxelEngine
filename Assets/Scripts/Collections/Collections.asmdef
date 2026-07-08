@@ -1,11 +1,10 @@
 {
-    "name": "Voxels",
-    "rootNamespace": "Voxels",
+    "name": "Collections",
+    "rootNamespace": "",
     "references": [
-        "GUID:2665a8d13d1b3f18800f46e256720795",
         "GUID:e0cd26848372d4e5c891c569017e11f1",
         "GUID:d8b63aba1907145bea998dd612889d6b",
-        "GUID:4deb760e91b62d996933054baaf1fdb7"
+        "GUID:2665a8d13d1b3f18800f46e256720795"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],
