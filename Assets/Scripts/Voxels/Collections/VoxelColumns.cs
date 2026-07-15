@@ -4,6 +4,8 @@ using UnityEngine;
 using Unity.Collections;
 using Unity.Mathematics;
 using Unity.Burst;
+using System.Collections.Generic;
+using System.Collections;
 
 namespace Voxels.Collections {
 
@@ -14,7 +16,7 @@ namespace Voxels.Collections {
     [BurstCompile]
     public readonly unsafe struct VoxelColumns {
         public readonly int sizeX, sizeZ; // Size in the x and z dimensions
-        internal readonly NativeArray<Voxel> voxels; // All columns
+        internal readonly NativeArray<Column> columns; // All columns
         internal readonly NativeArray<int> startIndices; // [sizeX * sizeZ + 1] sized array giving the start index of each column
 
 
@@ -29,10 +31,10 @@ namespace Voxels.Collections {
             sizeZ = BitConverter.ToInt32(bytes, offset + sizeof(int));
             int nVoxels = BitConverter.ToInt32(bytes, offset + 2 * sizeof(int));
             offset += 3 * sizeof(int);
-            voxels = asset.GetData<byte>()
-                .GetSubArray(offset, nVoxels * sizeof(Voxel))
-                .Reinterpret<Voxel>(1);
-            offset += nVoxels * sizeof(Voxel);
+            columns = asset.GetData<byte>()
+                .GetSubArray(offset, nVoxels * sizeof(Column))
+                .Reinterpret<Column>(1);
+            offset += nVoxels * sizeof(Column);
             startIndices = asset.GetData<byte>()
                 .GetSubArray(offset, (sizeX * sizeZ + 1) * sizeof(int))
                 .Reinterpret<int>(1);
@@ -45,16 +47,16 @@ namespace Voxels.Collections {
         public VoxelColumns(Native2DArray<Voxel> map) {
             sizeX = map.sizeX;
             sizeZ = map.sizeY;
-            FromHeightMap(in map, out voxels, out startIndices);
+            FromHeightMap(in map, out columns, out startIndices);
         }
 
 
         public void Dispose() {
-            voxels.Dispose();
+            columns.Dispose();
             startIndices.Dispose();
         }
 
-        public bool IsCreated => voxels.IsCreated;
+        public bool IsCreated => columns.IsCreated;
 
 
         /// <summary>
@@ -67,17 +69,19 @@ namespace Voxels.Collections {
         public Color32 GetVoxel(int x, int y, int z) {
             int start = startIndices[x + sizeX * z];
             int len = startIndices[x + sizeX * z + 1] - start;
-            while (len > 0) {
+            while (len > 1) {
                 int half = len >> 1;
                 int middle = start + half;
-                if (voxels[middle].y < y) {
-                    start = middle + 1;
-                    len -= half + 1;
+                if (columns[middle].start > y) {
+                    len = half;
                 }
-                else len = half;
+                else {
+                    start = middle;
+                    len -= half;
+                }
             }
-            Voxel voxel = voxels[start];
-            return voxel.y == y ? voxel.color : default;
+            Column column = columns[start];
+            return column.start <= y && column.start + column.height > y ? column.color : default;
         }
 
         public Color32 GetVoxel(int3 coords) => GetVoxel(coords.x, coords.y, coords.z);
@@ -89,13 +93,13 @@ namespace Voxels.Collections {
         /// <param name="x">x coordinate of the column</param>
         /// <param name="z">z coordinate of the column</param>
         /// <returns>Enumerable of voxels</returns>
-        public NativeArray<Voxel> GetColumn(int x, int z) {
+        public Enumerable<Voxel, Enumerator> GetColumn(int x, int z) {
             int start = startIndices[x + sizeX * z];
             int length = startIndices[x + sizeX * z + 1] - start;
-            return voxels.GetSubArray(start, length);
+            return new(new(columns.GetSubArray(start, length)));
         }
 
-        public NativeArray<Voxel> GetColumn(int2 coords) => GetColumn(coords.x, coords.y);
+        public Enumerable<Voxel, Enumerator> GetColumn(int2 coords) => GetColumn(coords.x, coords.y);
 
 
         /// <summary>
@@ -106,7 +110,7 @@ namespace Voxels.Collections {
         /// <returns>y coordinate of the voxel, int.MaxValue if no voxels in this column</returns>
         public int GetMin(int x, int z) {
             if (startIndices[x + sizeX * z] == startIndices[x + sizeX * z + 1]) return int.MaxValue;
-            return voxels[startIndices[x + sizeX * z]].y;
+            return columns[startIndices[x + sizeX * z]].start;
         }
 
         public int GetMin(int2 coords) => GetMin(coords.x, coords.y);
@@ -120,7 +124,8 @@ namespace Voxels.Collections {
         /// <returns>y coordinate of the voxel, int.MinValue if no voxels in this column</returns>
         public int GetMax(int x, int z) {
             if (startIndices[x + sizeX * z] == startIndices[x + sizeX * z + 1]) return int.MinValue;
-            return voxels[startIndices[x + sizeX * z + 1] - 1].y;
+            Column column = columns[startIndices[x + sizeX * z + 1] - 1];
+            return column.start + column.height - 1;
         }
 
         public int GetMax(int2 coords) => GetMax(coords.x, coords.y);
@@ -130,20 +135,19 @@ namespace Voxels.Collections {
         /// Write voxel columns to a file
         /// </summary>
         /// <param name="filePath">Path to the file</param>
-        /// <param name="voxels">The voxels</param>
         public void Write(string filePath) {
             using FileStream file = File.OpenWrite(filePath);
             file.Write(BitConverter.GetBytes(sizeX));
             file.Write(BitConverter.GetBytes(sizeZ));
-            file.Write(BitConverter.GetBytes(voxels.Length));
-            file.Write(voxels.Reinterpret<byte>(sizeof(Voxel)).ToArray());
+            file.Write(BitConverter.GetBytes(columns.Length));
+            file.Write(columns.Reinterpret<byte>(sizeof(Column)).ToArray());
             file.Write(startIndices.Reinterpret<byte>(sizeof(int)).ToArray());
         }
 
 
         [BurstCompile]
-        private static void FromHeightMap(in Native2DArray<Voxel> map, out NativeArray<Voxel> voxels, out NativeArray<int> startIndices) {
-            NativeList<Voxel> voxelsList = new(Allocator.Persistent);
+        private static void FromHeightMap(in Native2DArray<Voxel> map, out NativeArray<Column> columns, out NativeArray<int> startIndices) {
+            NativeList<Column> columnsList = new(Allocator.Persistent);
             startIndices = new(map.sizeX * map.sizeY + 1, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
 
             for (int z = 0; z < map.sizeY; z++) {
@@ -155,18 +159,83 @@ namespace Voxels.Collections {
                     if (x < map.sizeX - 1) minNeighbor = math.min(minNeighbor, map[x + 1, z].y);
                     if (z > 0) minNeighbor = math.min(minNeighbor, map[x, z - 1].y);
                     if (z < map.sizeY - 1) minNeighbor = math.min(minNeighbor, map[x, z + 1].y);
+#if ENABLE_UNITY_COLLECTIONS_CHECKS
+                    if (maxY < 0 || maxY > ushort.MaxValue || minNeighbor < 0 || minNeighbor > ushort.MaxValue)
+                        throw new ArgumentOutOfRangeException($"Height must be between 0 and {ushort.MaxValue}");
+#endif
 
                     // Add voxels
-                    startIndices[x + map.sizeX * z] = voxelsList.Length;
-                    for (int y = minNeighbor + 1; y <= maxY; y++) {
-                        voxelsList.Add(new(y, map[x, z].color));
-                    }
+                    startIndices[x + map.sizeX * z] = columnsList.Length;
+                    columnsList.Add(new Column((ushort)(minNeighbor + 1), (ushort)(maxY - minNeighbor), map[x, z].color));
                 }
             }
-            startIndices[map.sizeX * map.sizeY] = voxelsList.Length;
+            startIndices[map.sizeX * map.sizeY] = columnsList.Length;
 
-            voxels = voxelsList.ToArray(Allocator.Persistent);
-            voxelsList.Dispose();
+            columns = columnsList.ToArray(Allocator.Persistent);
+            columnsList.Dispose();
+        }
+
+
+        /// <summary>
+        /// Column of voxels with the same color
+        /// </summary>
+        internal readonly struct Column {
+            public readonly ushort start;
+            public readonly ushort height;
+            public readonly Color32 color;
+
+            public Column(ushort start, ushort height, Color32 color) {
+                this.start = start;
+                this.height = height;
+                this.color = color;
+            }
+        }
+
+
+        /// <summary>
+        /// Column enumerator
+        /// </summary>
+        public struct Enumerator : IEnumerator<Voxel> {
+            private readonly NativeArray<Column> columns;
+            private int i;
+            private int y;
+
+            internal Enumerator(NativeArray<Column> columns) {
+                this.columns = columns;
+                i = -1;
+                y = -1;    
+            }
+
+            public readonly Voxel Current {
+                get {
+#if ENABLE_UNITY_COLLECTIONS_CHECKS 
+                    if (i < 0 || i >= columns.Length) throw new InvalidOperationException($"Current access before MoveNext was called or after it returned false");
+#endif
+                    return new Voxel(y, columns[i].color);
+                }
+            }
+
+            readonly object IEnumerator.Current => Current;
+
+            public readonly void Dispose() {}
+
+            public bool MoveNext() {
+#if ENABLE_UNITY_COLLECTIONS_CHECKS 
+                if (i >= columns.Length) throw new InvalidOperationException($"MoveNext call after it already returned false");
+#endif
+                if (i == -1 || y == columns[i].start + columns[i].height - 1) {
+                    i++;
+                    if (i == columns.Length) return false;
+                    y = columns[i].start;
+                }
+                else y++;
+                return true;
+            }
+
+            public void Reset() {
+                i = -1;
+                y = -1;
+            }
         }
     }
 
