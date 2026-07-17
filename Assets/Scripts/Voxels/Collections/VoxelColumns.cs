@@ -24,7 +24,7 @@ namespace Voxels.Collections {
         /// Get voxel columns from an asset
         /// </summary>
         /// <param name="asset">Asset containing the voxels</param>
-        public VoxelColumns(TextAsset asset) {
+        internal VoxelColumns(TextAsset asset) {
             byte[] bytes = asset.bytes;
             int offset = 0;
             sizeX = BitConverter.ToInt32(bytes, offset);
@@ -48,6 +48,16 @@ namespace Voxels.Collections {
             sizeX = map.sizeX;
             sizeZ = map.sizeY;
             FromHeightMap(in map, out columns, out startIndices);
+        }
+
+        /// <summary>
+        /// Create voxel columns from a 3D color array
+        /// </summary>
+        /// <param name="colors">Color of each voxel</param>
+        public VoxelColumns(Native3DArray<Color32> colors) {
+            sizeX = colors.sizeX;
+            sizeZ = colors.sizeZ;
+            FromColorArray(in colors, out columns, out startIndices);
         }
 
 
@@ -136,7 +146,7 @@ namespace Voxels.Collections {
         /// </summary>
         /// <param name="filePath">Path to the file</param>
         public void Write(string filePath) {
-            using FileStream file = File.OpenWrite(filePath);
+            using FileStream file = File.Create(filePath);
             file.Write(BitConverter.GetBytes(sizeX));
             file.Write(BitConverter.GetBytes(sizeZ));
             file.Write(BitConverter.GetBytes(columns.Length));
@@ -147,7 +157,7 @@ namespace Voxels.Collections {
 
         [BurstCompile]
         private static void FromHeightMap(in Native2DArray<Voxel> map, out NativeArray<Column> columns, out NativeArray<int> startIndices) {
-            NativeList<Column> columnsList = new(Allocator.Persistent);
+            NativeList<Column> columnsList = new(Allocator.Temp);
             startIndices = new(map.sizeX * map.sizeY + 1, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
 
             for (int z = 0; z < map.sizeY; z++) {
@@ -170,6 +180,36 @@ namespace Voxels.Collections {
                 }
             }
             startIndices[map.sizeX * map.sizeY] = columnsList.Length;
+
+            columns = columnsList.ToArray(Allocator.Persistent);
+            columnsList.Dispose();
+        }
+
+
+        [BurstCompile]
+        private static void FromColorArray(in Native3DArray<Color32> colors, out NativeArray<Column> columns, out NativeArray<int> startIndices) {
+#if ENABLE_UNITY_COLLECTIONS_CHECKS
+            if (colors.sizeY > ushort.MaxValue)
+                throw new ArgumentOutOfRangeException($"Y size must be between 0 and {ushort.MaxValue}");
+#endif
+            NativeList<Column> columnsList = new(Allocator.Temp);
+            startIndices = new(colors.sizeX * colors.sizeZ + 1, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+
+            for (int z = 0; z < colors.sizeZ; z++) {
+                for (int x = 0; x < colors.sizeX; x++) {
+                    startIndices[x + colors.sizeX * z] = columnsList.Length;
+                    int start = -1;
+                    for (int y = 0; y < colors.sizeY; y++) {
+                        Color32 color = colors[x, y, z];
+                        if (Voxel.Color32Equals(color, default)) continue;
+                        if (start == -1) start = y;
+                        if (y + 1 == colors.sizeY || !Voxel.Color32Equals(color, colors[x, y + 1, z])) {
+                            columnsList.Add(new Column((ushort)start, (ushort)(y - start + 1), color));
+                        }
+                    }
+                }
+            }
+            startIndices[colors.sizeX * colors.sizeZ] = columnsList.Length;
 
             columns = columnsList.ToArray(Allocator.Persistent);
             columnsList.Dispose();
@@ -252,6 +292,9 @@ namespace Voxels.Collections {
             this.y = y;
             this.color = color;
         }
+
+        public static bool Color32Equals(Color32 x, Color32 y)
+            => x.r == y.r && x.g == y.g && x.b == y.b && x.a == y.a;
     }
     
 }

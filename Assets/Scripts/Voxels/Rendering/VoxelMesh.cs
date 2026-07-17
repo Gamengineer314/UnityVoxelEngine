@@ -6,14 +6,14 @@ namespace Voxels.Rendering {
     
     [ExecuteInEditMode]
     public class VoxelMesh : MonoBehaviour {
-        [SerializeField] private TextAsset voxelsAsset;
-        [SerializeField] private Material material;
+        [SerializeField] internal VoxelColumnsAsset voxelsAsset;
+        [SerializeField] internal Material material;
         [SerializeField] internal Vector3 offset;
         internal VoxelColumns voxels;
 
         internal void Start() {
             if (voxelsAsset) {
-                voxels = new(voxelsAsset);
+                voxels = voxelsAsset.voxels;
                 AddToLayer();
             }
         }

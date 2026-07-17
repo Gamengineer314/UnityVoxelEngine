@@ -139,7 +139,7 @@ namespace Unity.Collections {
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
             => new(new(tree->SubSetBefore(end).GetEnumerator(), m_Safety));
 #else
-            => new(new(tree->SubSetBefore(end).GetEnumerator(), m_Safety));
+            => new(new(tree->SubSetBefore(end).GetEnumerator()));
 #endif
 
         /// <summary>
@@ -151,7 +151,7 @@ namespace Unity.Collections {
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
             => new(new(tree->SubSetAfter(start).GetEnumerator(), m_Safety));
 #else
-            => new(new(tree->SubSetAfter(start).GetEnumerator(), m_Safety));
+            => new(new(tree->SubSetAfter(start).GetEnumerator()));
 #endif
 
         /// <summary>
@@ -164,7 +164,7 @@ namespace Unity.Collections {
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
             => new(new(tree->SubSetBetween(start, end).GetEnumerator(), m_Safety));
 #else
-            => new(new(tree->SubSetBetween(start, end).GetEnumerator(), m_Safety));
+            => new(new(tree->SubSetBetween(start, end).GetEnumerator()));
 #endif
     }
 

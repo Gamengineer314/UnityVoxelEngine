@@ -30,7 +30,7 @@ namespace Unity.Collections {
             AtomicSafetyHandle.UseSecondaryVersion(ref safety);
             m_Safety = safety;
 #else
-        public NativeEnumerator(T enumerator) {
+        public NativeEnumerator(TEnumerator enumerator) {
 #endif
             this.enumerator = enumerator;
         }
