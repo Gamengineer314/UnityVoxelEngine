@@ -20,24 +20,28 @@ namespace Voxels.Collections {
         internal readonly NativeArray<int> startIndices; // [sizeX * sizeZ + 1] sized array giving the start index of each column
 
 
+        internal VoxelColumns(int sizeX, int sizeZ, NativeArray<Column> columns, NativeArray<int> startIndices) {
+            this.sizeX = sizeX;
+            this.sizeZ = sizeZ;
+            this.columns = columns;
+            this.startIndices = startIndices;
+        }
+        
         /// <summary>
-        /// Get voxel columns from an asset
+        /// Get voxel columns from a file
         /// </summary>
-        /// <param name="asset">Asset containing the voxels</param>
-        internal VoxelColumns(TextAsset asset) {
-            byte[] bytes = asset.bytes;
+        /// <param name="path">File path</param>
+        public VoxelColumns(string path) {
+            byte[] array = File.ReadAllBytes(path);
+            NativeArray<byte> nativeArray = new(array, Allocator.Persistent);
             int offset = 0;
-            sizeX = BitConverter.ToInt32(bytes, offset);
-            sizeZ = BitConverter.ToInt32(bytes, offset + sizeof(int));
-            int nVoxels = BitConverter.ToInt32(bytes, offset + 2 * sizeof(int));
+            sizeX = BitConverter.ToInt32(array, offset);
+            sizeZ = BitConverter.ToInt32(array, offset + sizeof(int));
+            int nVoxels = BitConverter.ToInt32(array, offset + 2 * sizeof(int));
             offset += 3 * sizeof(int);
-            columns = asset.GetData<byte>()
-                .GetSubArray(offset, nVoxels * sizeof(Column))
-                .Reinterpret<Column>(1);
+            columns = nativeArray.GetSubArray(offset, nVoxels * sizeof(Column)).Reinterpret<Column>(1);
             offset += nVoxels * sizeof(Column);
-            startIndices = asset.GetData<byte>()
-                .GetSubArray(offset, (sizeX * sizeZ + 1) * sizeof(int))
-                .Reinterpret<int>(1);
+            startIndices = nativeArray.GetSubArray(offset, (sizeX * sizeZ + 1) * sizeof(int)).Reinterpret<int>(1);
         }
 
         /// <summary>
@@ -222,10 +226,11 @@ namespace Voxels.Collections {
         /// <summary>
         /// Column of voxels with the same color
         /// </summary>
-        internal readonly struct Column {
-            public readonly ushort start;
-            public readonly ushort height;
-            public readonly Color32 color;
+        [Serializable]
+        internal struct Column {
+            public ushort start;
+            public ushort height;
+            public Color32 color;
 
             public Column(ushort start, ushort height, Color32 color) {
                 this.start = start;

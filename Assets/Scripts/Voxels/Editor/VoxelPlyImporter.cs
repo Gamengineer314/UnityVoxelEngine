@@ -25,24 +25,16 @@ namespace Voxels.Editor {
             VoxelColumns voxels = new(colors);
             colors.Dispose();
 
-            // Create TextAsset
-            string directoryPath = Path.Combine(Application.dataPath, "Voxels");
-            Directory.CreateDirectory(directoryPath);
-            string assetName = Path.GetFileNameWithoutExtension(ctx.assetPath);
-            string bytesName = assetName + ".bytes";
-            voxels.Write(Path.Combine(directoryPath, bytesName));
-            voxels.Dispose();
-            AssetDatabase.ImportAsset(Path.Combine("Assets", "Voxels", bytesName));
-
             // Create asset and prefab
+            string assetName = Path.GetFileNameWithoutExtension(ctx.assetPath);
             VoxelColumnsAsset voxelAsset = ScriptableObject.CreateInstance<VoxelColumnsAsset>();
             voxelAsset.name = assetName;
+            voxelAsset.Init(voxels);
             GameObject prefab = new(assetName, typeof(VoxelMesh));
             VoxelMesh mesh = prefab.GetComponent<VoxelMesh>();
             mesh.voxelsAsset = voxelAsset;
             mesh.material = AssetDatabase.LoadAssetAtPath<Material>(Path.Combine("Assets", "Shaders", "Voxels", "VoxelDefault.mat"));
 
-            // Create VoxelColumnsAsset
             ctx.AddObjectToAsset("prefab", prefab);
             ctx.SetMainObject(prefab);
             ctx.AddObjectToAsset("voxels", voxelAsset);
@@ -101,30 +93,6 @@ namespace Voxels.Editor {
                 }
             }
             return colors;
-        }
-
-
-        private class PostProcessor : AssetPostprocessor {
-            private static void OnPostprocessAllAssets(string[] importedAssets, string[] deletedAssets, string[] movedAssets, string[] movedFromAssetPaths, bool didDomainReload) {
-                // Assign TextAsset references to created VoxelColumnsAsset after the TextAsset was imported
-                foreach (string assetPath in importedAssets) {
-                    if (Path.GetExtension(assetPath) == ".ply") {
-                        VoxelColumnsAsset voxelAsset = AssetDatabase.LoadAssetAtPath<VoxelColumnsAsset>(assetPath);
-                        string textAssetPath = Path.Combine("Assets", "Voxels", Path.GetFileNameWithoutExtension(assetPath) + ".bytes");
-                        TextAsset textAsset = AssetDatabase.LoadAssetAtPath<TextAsset>(textAssetPath);
-                        voxelAsset.Asset = textAsset;
-                    }
-                }
-
-                // Delete TextAsset for deleted VoxelColumnAsset
-                foreach (string assetPath in deletedAssets) {
-                    if (Path.GetExtension(assetPath) == ".ply") {
-                        string textAssetPath = Path.Combine("Assets", "Voxels", Path.GetFileNameWithoutExtension(assetPath) + ".bytes");
-                        File.Delete(textAssetPath);
-                        File.Delete(textAssetPath + ".meta");
-                    }
-                }
-            }
         }
     }
 
