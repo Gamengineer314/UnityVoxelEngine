@@ -198,13 +198,16 @@ namespace Voxels.Collections {
             for (int z = 0; z < colors.sizeZ; z++) {
                 for (int x = 0; x < colors.sizeX; x++) {
                     startIndices[x + colors.sizeX * z] = columnsList.Length;
-                    int start = -1;
+                    int start = 0;
                     for (int y = 0; y < colors.sizeY; y++) {
                         Color32 color = colors[x, y, z];
-                        if (Voxel.Color32Equals(color, default)) continue;
-                        if (start == -1) start = y;
+                        if (Voxel.Color32Equals(color, default)) {
+                            start = y + 1;
+                            continue;
+                        }
                         if (y + 1 == colors.sizeY || !Voxel.Color32Equals(color, colors[x, y + 1, z])) {
                             columnsList.Add(new Column((ushort)start, (ushort)(y - start + 1), color));
+                            start = y + 1;
                         }
                     }
                 }

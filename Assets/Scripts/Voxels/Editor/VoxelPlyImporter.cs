@@ -1,9 +1,9 @@
 #if UNITY_EDITOR
 using System.IO;
 using System.Globalization;
-using UnityEditor.AssetImporters;
 using UnityEngine;
 using UnityEditor;
+using UnityEditor.AssetImporters;
 using Unity.Collections;
 using Unity.Mathematics;
 using Voxels.Collections;
@@ -23,7 +23,6 @@ namespace Voxels.Editor {
                 colors = ReadVoxels(reader);
             }
             VoxelColumns voxels = new(colors);
-            Debug.Log(voxels.columns.Length);
             colors.Dispose();
 
             // Create TextAsset
@@ -101,7 +100,6 @@ namespace Voxels.Editor {
                     reader.ReadLine();
                 }
             }
-            Debug.Log(colors.sizeX + " " + colors.sizeZ);
             return colors;
         }
 
@@ -110,7 +108,6 @@ namespace Voxels.Editor {
             private static void OnPostprocessAllAssets(string[] importedAssets, string[] deletedAssets, string[] movedAssets, string[] movedFromAssetPaths, bool didDomainReload) {
                 // Assign TextAsset references to created VoxelColumnsAsset after the TextAsset was imported
                 foreach (string assetPath in importedAssets) {
-                    Debug.Log(assetPath);
                     if (Path.GetExtension(assetPath) == ".ply") {
                         VoxelColumnsAsset voxelAsset = AssetDatabase.LoadAssetAtPath<VoxelColumnsAsset>(assetPath);
                         string textAssetPath = Path.Combine("Assets", "Voxels", Path.GetFileNameWithoutExtension(assetPath) + ".bytes");

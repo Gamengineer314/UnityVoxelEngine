@@ -1,0 +1,11 @@
+fileFormatVersion: 2
+guid: 6d7225aa13825eefcb837c1dd2584d6f
+ScriptedImporter:
+  internalIDToNameTable: []
+  externalObjects: {}
+  serializedVersion: 2
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+  script: {fileID: 11500000, guid: fa1c9c0a2b2e357058a6f42c5216a298, type: 3}
+  plyVoxelSize: 0.1

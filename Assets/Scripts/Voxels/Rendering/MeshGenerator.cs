@@ -554,8 +554,8 @@ namespace Voxels.Rendering {
                         if (textured) {
                             if (data.colors.Length - startColor + width * height - 1 > VoxelFace.maxColor) break;
                             data.faces.Add(new VoxelFace(pos, width, height, normal, data.colors.Length - startColor));
-                            for (int x = 0; x < width; x++) {
-                                for (int y = 0; y < height; y++) {
+                            for (int y = 0; y < height; y++) {
+                                for (int x = 0; x < width; x++) {
                                     int3 texturePos = currentChunkStart + pos;
                                     texturePos[VoxelNormals.WidthAxis(normal)] += x;
                                     texturePos[VoxelNormals.HeightAxis(normal)] += y;
