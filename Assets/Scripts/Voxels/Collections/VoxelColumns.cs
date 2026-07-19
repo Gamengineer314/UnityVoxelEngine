@@ -296,6 +296,8 @@ namespace Voxels.Collections {
         public readonly int y;
         public readonly Color32 color;
 
+        public static readonly Color32 ghost = new(255, 0, 0, 0); // Block that isn't rendered and has no collider used to hide faces
+
         public Voxel(int y, Color32 color) {
             this.y = y;
             this.color = color;

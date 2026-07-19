@@ -8,12 +8,15 @@ using Unity.Collections;
 using Unity.Mathematics;
 using Voxels.Collections;
 using Voxels.Rendering;
+using System.Collections.Generic;
 
 namespace Voxels.Editor {
 
     [ScriptedImporter(1, "ply")]
     public class VoxelPlyImporter : ScriptedImporter {
         [SerializeField] private float plyVoxelSize = 0.1f;
+        [SerializeField] private bool fillHoles = true;
+        [SerializeField] private bool removeInside = true;
 
 
         public override void OnImportAsset(AssetImportContext ctx) {
@@ -22,6 +25,8 @@ namespace Voxels.Editor {
             using (StreamReader reader = new(ctx.assetPath)) {
                 colors = ReadVoxels(reader);
             }
+            if (fillHoles) FillHoles(colors);
+            if (removeInside) RemoveInside(colors);
             VoxelColumns voxels = new(colors);
             colors.Dispose();
 
@@ -93,6 +98,104 @@ namespace Voxels.Editor {
                 }
             }
             return colors;
+        }
+
+
+        /// <summary>
+        /// Fill invisible holes in the model
+        /// </summary>
+        /// <param name="colors">3D array of voxel colors</param>
+        private void FillHoles(Native3DArray<Color32> colors) {
+            Stack<int3> stack = new();
+            List<int3> list = new();
+            Native3DArray<bool> visited = new(colors.sizeX, colors.sizeY, colors.sizeZ, Allocator.Temp);
+            for (int x = 0; x < colors.sizeX; x++) {
+                for (int y = 0; y < colors.sizeY; y++) {
+                    for (int z = 0; z < colors.sizeZ; z++) {
+                        if (!Voxel.Color32Equals(colors[x, y, z], default)) continue;
+                        bool isHole = true;
+                        stack.Push(new int3(x, y, z));
+                        do {
+                            int3 pos = stack.Pop();
+                            if (math.any(pos == -1) || pos.x == colors.sizeX || pos.y == colors.sizeY || pos.z == colors.sizeZ) {
+                                isHole = false;
+                                continue;
+                            }
+                            if (visited[pos] || !Voxel.Color32Equals(colors[pos], default)) continue;
+                            visited[pos] = true;
+                            list.Add(pos);
+                            stack.Push(new(pos.x - 1, pos.y, pos.z));
+                            stack.Push(new(pos.x + 1, pos.y, pos.z));
+                            stack.Push(new(pos.x, pos.y + 1, pos.z));
+                            stack.Push(new(pos.x, pos.y - 1, pos.z));
+                            stack.Push(new(pos.x, pos.y, pos.z + 1));
+                            stack.Push(new(pos.x, pos.y, pos.z - 1));
+                        } while (stack.Count > 0);
+                        if (isHole) {
+                            foreach (int3 pos in list) {
+                                colors[pos] = Color.black;
+                            }
+                        }
+                        list.Clear();
+                    }
+                }
+            }
+        }
+
+
+        /// <summary>
+        /// Remove invisible blocks in the model
+        /// </summary>
+        /// <param name="colors">3D array of voxel colors</param>
+        private void RemoveInside(Native3DArray<Color32> colors) {
+            // Find visible voxels
+            Native3DArray<bool> visible = new(colors.sizeX, colors.sizeY, colors.sizeZ, Allocator.Temp);
+            for (int x = 0; x < colors.sizeX; x++) {
+                for (int y = 0; y < colors.sizeY; y++) {
+                    for (int z = 0; z < colors.sizeZ; z++) {
+                        if (!Voxel.Color32Equals(colors[x, y, z], default) && (
+                            x == 0 || y == 0 || z == 0 || x == colors.sizeX - 1 || y == colors.sizeY - 1 || z == colors.sizeZ - 1 ||
+                            Voxel.Color32Equals(colors[x - 1, y, z], default) ||
+                            Voxel.Color32Equals(colors[x + 1, y, z], default) ||
+                            Voxel.Color32Equals(colors[x, y - 1, z], default) ||
+                            Voxel.Color32Equals(colors[x, y + 1, z], default) ||
+                            Voxel.Color32Equals(colors[x, y, z - 1], default) ||
+                            Voxel.Color32Equals(colors[x, y, z + 1], default)
+                        )) {
+                            visible[x, y, z] = true;
+                        }
+                    }
+                }
+            }
+
+            // Hide invisible faces
+            for (int x = 0; x < colors.sizeX; x++) {
+                for (int y = 0; y < colors.sizeY; y++) {
+                    for (int z = 0; z < colors.sizeZ; z++) {
+                        if (!Voxel.Color32Equals(colors[x, y, z], default) && !visible[x, y, z] && (
+                            visible[x - 1, y, z] ||
+                            visible[x + 1, y, z] ||
+                            visible[x, y - 1, z] ||
+                            visible[x, y + 1, z] ||
+                            visible[x, y, z - 1] ||
+                            visible[x, y, z + 1]
+                        )) {
+                            colors[x, y, z] = Voxel.ghost;
+                        }
+                    }
+                }
+            }
+
+            // Remove all other voxels
+            for (int x = 0; x < colors.sizeX; x++) {
+                for (int y = 0; y < colors.sizeY; y++) {
+                    for (int z = 0; z < colors.sizeZ; z++) {
+                        if (!visible[x, y, z] && !Voxel.Color32Equals(colors[x, y, z], Voxel.ghost)) {
+                            colors[x, y, z] = default;
+                        }
+                    }
+                }
+            }
         }
     }
 

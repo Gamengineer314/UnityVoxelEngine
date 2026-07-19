@@ -261,7 +261,7 @@ namespace Voxels.Rendering {
                                 min = math.min(min, voxels.GetMin(x, z));
                                 max = math.max(max, voxels.GetMax(x, z));
                                 foreach (Voxel voxel in voxels.GetColumn(x, z)) {
-                                    if (!textured) {
+                                    if (!textured && !Voxel.Color32Equals(voxel.color, Voxel.ghost)) {
                                         uint id = Identifiers.ColorToId(voxel.color);
                                         if (!data.colorIndices.ContainsKey(id)) {
                                             data.colorIndices[id] = data.colors.Length;
@@ -427,7 +427,9 @@ namespace Voxels.Rendering {
                                 if (axis == 2 && next.z < 0) continue;
                                 if (next.y < voxels.GetMin(next.xz)) continue;
                             }
-                            int index = textured ? 0 : data.colorIndices[Identifiers.ColorToId(voxels.GetVoxel(posDepth))];
+                            Color32 color = voxels.GetVoxel(posDepth);
+                            if (Voxel.Color32Equals(color, Voxel.ghost)) continue;
+                            int index = textured ? 0 : data.colorIndices[Identifiers.ColorToId(color)];
                             planes[y + depth * subChunkSize + index * subChunkSize * subChunkSize + 2 * axis * subChunkSize * subChunkSize * nIDs] |= 1UL << x;
                         }
 
@@ -447,7 +449,9 @@ namespace Voxels.Rendering {
                                 if (axis == 2 && next.z >= voxels.sizeZ) continue;
                                 if (next.y < voxels.GetMin(next.xz)) continue;
                             }
-                            int index = textured ? 0 : data.colorIndices[Identifiers.ColorToId(voxels.GetVoxel(posDepth))];
+                            Color32 color = voxels.GetVoxel(posDepth);
+                            if (Voxel.Color32Equals(color, Voxel.ghost)) continue;
+                            int index = textured ? 0 : data.colorIndices[Identifiers.ColorToId(color)];
                             planes[y + depth * subChunkSize + index * subChunkSize * subChunkSize + (2 * axis + 1) * subChunkSize * subChunkSize * nIDs] |= 1UL << x;
                         }
 

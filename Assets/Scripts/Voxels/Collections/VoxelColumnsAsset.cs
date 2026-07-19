@@ -9,8 +9,8 @@ namespace Voxels.Collections {
     [PreferBinarySerialization]
     public class VoxelColumnsAsset : ScriptableObject {
         [SerializeField] private int sizeX, sizeZ;
-        [SerializeField] private VoxelColumns.Column[] columns;
-        [SerializeField] private int[] startIndices;
+        [SerializeField] [HideInInspector] private VoxelColumns.Column[] columns;
+        [SerializeField] [HideInInspector] private int[] startIndices;
         public VoxelColumns voxels { get; private set; }
 
         internal void Init(VoxelColumns voxels) {
