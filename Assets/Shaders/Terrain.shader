@@ -8,7 +8,7 @@ Shader "Voxels/Terrain" {
             #pragma vertex vert
             #pragma fragment frag
 
-            #include "Voxels/VoxelShader.cginc"
+            #include "Assets/Voxels/Shaders/VoxelShader.cginc"
 
             struct v2f {
                 VoxelV2F voxel;

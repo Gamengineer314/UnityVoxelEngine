@@ -40,7 +40,7 @@ namespace Voxels.Editor {
             VoxelMesh mesh = prefab.GetComponent<VoxelMesh>();
             mesh.voxelsAsset = voxelAsset;
             mesh.parameters = AssetDatabase.LoadAssetAtPath<GenerationParameters>(Path.Combine("Assets", "Voxels", "Default.asset"));
-            mesh.material = AssetDatabase.LoadAssetAtPath<Material>(Path.Combine("Assets", "Shaders", "Voxels", "VoxelDefault.mat"));
+            mesh.material = AssetDatabase.LoadAssetAtPath<Material>(Path.Combine("Assets", "Voxels", "Shaders", "VoxelDefault.mat"));
 
             ctx.AddObjectToAsset("prefab", prefab);
             ctx.SetMainObject(prefab);
