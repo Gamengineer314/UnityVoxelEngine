@@ -33,6 +33,11 @@ namespace Unity.Collections {
         }
 
         /// <summary>
+        /// Whether memory is allocated for the collection
+        /// </summary>
+        public readonly bool IsCreated => queue != null;
+
+        /// <summary>
         /// Minimum item in the queue
         /// </summary>
         public T First {
@@ -57,6 +62,7 @@ namespace Unity.Collections {
         }
 
         public void Dispose() {
+            if (!IsCreated) return;
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
             AtomicSafetyHandle.CheckDeallocateAndThrow(m_Safety);
             AtomicSafetyHandle.Release(m_Safety);
@@ -64,6 +70,16 @@ namespace Unity.Collections {
             queue->Dispose();
             AllocatorManager.Free(queue->allocator, queue);
             queue = null;
+        }
+        
+        /// <summary>
+        /// Remove all items from the queue
+        /// </summary>
+        public void Clear() {
+#if ENABLE_UNITY_COLLECTIONS_CHECKS
+            AtomicSafetyHandle.CheckWriteAndThrow(m_Safety);
+#endif
+            queue->Clear();
         }
 
 

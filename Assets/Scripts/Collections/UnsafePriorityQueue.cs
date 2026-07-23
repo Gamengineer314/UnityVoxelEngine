@@ -18,9 +18,21 @@ namespace Unity.Collections.LowLevel.Unsafe {
         public int capacity;
 
         /// <summary>
+        /// Whether memory is allocated for the collection
+        /// </summary>
+        public readonly bool IsCreated => buffer != null;
+
+        /// <summary>
         /// Minimum item in the queue
         /// </summary>
-        public T First => buffer[1];
+        public T First {
+            get {
+#if ENABLE_UNITY_COLLECTIONS_CHECKS
+                if (length == 0) throw new InvalidOperationException("The queue is empty");
+#endif
+                return buffer[1];
+            }
+        }
 
 
         public UnsafePriorityQueue(Allocator allocator, int initialCapacity = 1) {
@@ -31,6 +43,11 @@ namespace Unity.Collections.LowLevel.Unsafe {
         }
 
         public readonly void Dispose() => AllocatorManager.Free(allocator, buffer);
+
+        /// <summary>
+        /// Remove all items from the queue
+        /// </summary>
+        public void Clear() => length = 0;
 
         /// <summary>
         /// Increment the length, doubling capacity if needed to add an item
@@ -61,7 +78,7 @@ namespace Unity.Collections.LowLevel.Unsafe {
         /// <returns>The item</returns>
         public T Dequeue() {
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
-            if (length <= 0) throw new InvalidOperationException("Dequeue from an empty queue");
+            if (length <= 0) throw new InvalidOperationException("The queue is empty");
 #endif
             T item = buffer[1];
             HeapifyDown(1, buffer[length--]);

@@ -12,13 +12,26 @@ namespace Unity.Collections.LowLevel.Unsafe {
         where T : unmanaged, IComparable<T> {
         public UnsafeTree<T, T> tree;
 
+        /// <summary>
+        /// Number of items in the set
+        /// </summary>
         public readonly int Length => tree.length;
+
+        /// <summary>
+        /// Whether memory is allocated for the collection
+        /// </summary>
+        public readonly bool IsCreated => tree.IsCreated;
 
         public UnsafeTreeSet(AllocatorManager.AllocatorHandle allocator, int initialCapacity = 1) {
             tree = new(allocator, initialCapacity);
         }
 
         public readonly void Dispose() => tree.Dispose();
+
+        /// <summary>
+        /// Remove all items from the set
+        /// </summary>
+        public void Clear() => tree.Clear();
 
         /// <summary>
         /// Check whether the set contains an item

@@ -22,13 +22,26 @@ namespace Unity.Collections.LowLevel.Unsafe {
 
         public UnsafeTree<ComparableKey, KeyValuePair<TKey, TValue>> tree;
 
+        /// <summary>
+        /// Number of items in the map
+        /// </summary>
         public readonly int Length => tree.length;
+
+        /// <summary>
+        /// Whether memory is allocated for the collection
+        /// </summary>
+        public readonly bool IsCreated => tree.IsCreated;
 
         public UnsafeTreeMap(AllocatorManager.AllocatorHandle allocator, int initialCapacity = 1) {
             tree = new(allocator, initialCapacity);
         }
 
         public readonly void Dispose() => tree.Dispose();
+
+        /// <summary>
+        /// Remove all items from the map
+        /// </summary>
+        public void Clear() => tree.Clear();
 
         /// <summary>
         /// Get the value associated with a key in the map

@@ -21,6 +21,11 @@ namespace Unity.Collections.LowLevel.Unsafe {
         public int capacity;
         public Edge reusable; // Index of the first reusable item
 
+        /// <summary>
+        /// Whether memory is allocated for the collection
+        /// </summary>
+        public readonly bool IsCreated => buffer != null;
+
 
         public UnsafeTree(AllocatorManager.AllocatorHandle allocator, int initialCapacity = 1) {
             this.allocator = allocator;
@@ -32,6 +37,14 @@ namespace Unity.Collections.LowLevel.Unsafe {
         }
 
         public readonly void Dispose() => AllocatorManager.Free(allocator, buffer);
+
+        /// <summary>
+        /// Remove all items from the tree
+        /// </summary>
+        public void Clear() {
+            length = 0;
+            reusable = Edge.Null;
+        }
 
         /// <summary>
         /// Double capacity if needed to add an item

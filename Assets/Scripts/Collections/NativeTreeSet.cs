@@ -20,6 +20,11 @@ namespace Unity.Collections {
 #endif
 
         /// <summary>
+        /// Whether memory is allocated for the collection
+        /// </summary>
+        public readonly bool IsCreated => tree != null;
+
+        /// <summary>
         /// Number of items in the tree
         /// </summary>
         public int Length {
@@ -45,6 +50,7 @@ namespace Unity.Collections {
         }
 
         public void Dispose() {
+            if (!IsCreated) return;
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
             AtomicSafetyHandle.CheckDeallocateAndThrow(m_Safety);
             AtomicSafetyHandle.Release(m_Safety);
@@ -52,6 +58,16 @@ namespace Unity.Collections {
             tree->Dispose();
             AllocatorManager.Free(tree->tree.allocator, tree);
             tree = null;
+        }
+
+        /// <summary>
+        /// Remove all items from the set
+        /// </summary>
+        public void Clear() {
+#if ENABLE_UNITY_COLLECTIONS_CHECKS
+            AtomicSafetyHandle.CheckWriteAndThrow(m_Safety);
+#endif
+            tree->Clear();
         }
 
 

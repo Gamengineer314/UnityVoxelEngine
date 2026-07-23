@@ -70,7 +70,6 @@ namespace Unity.Collections.LowLevel.Unsafe {
                     return buffer[index];
                 }
             }
-
             readonly object IEnumerator.Current => Current;
 
             public readonly void Dispose() {}
