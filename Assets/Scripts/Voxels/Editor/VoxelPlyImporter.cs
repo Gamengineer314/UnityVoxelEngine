@@ -15,6 +15,7 @@ namespace Voxels.Editor {
     [ScriptedImporter(1, "ply")]
     public class VoxelPlyImporter : ScriptedImporter {
         [SerializeField] private float plyVoxelSize = 0.1f;
+        [SerializeField] private float3 offset;
         [SerializeField] private bool fillHoles = true;
         [SerializeField] private bool removeInside = true;
 
@@ -27,7 +28,7 @@ namespace Voxels.Editor {
             }
             if (fillHoles) FillHoles(colors);
             if (removeInside) RemoveInside(colors);
-            VoxelColumns voxels = new(colors);
+            VoxelColumns voxels = new(colors, offset);
             colors.Dispose();
 
             // Create asset and prefab
@@ -38,6 +39,7 @@ namespace Voxels.Editor {
             GameObject prefab = new(assetName, typeof(VoxelMesh));
             VoxelMesh mesh = prefab.GetComponent<VoxelMesh>();
             mesh.voxelsAsset = voxelAsset;
+            mesh.parameters = AssetDatabase.LoadAssetAtPath<GenerationParameters>(Path.Combine("Assets", "Voxels", "Default.asset"));
             mesh.material = AssetDatabase.LoadAssetAtPath<Material>(Path.Combine("Assets", "Shaders", "Voxels", "VoxelDefault.mat"));
 
             ctx.AddObjectToAsset("prefab", prefab);

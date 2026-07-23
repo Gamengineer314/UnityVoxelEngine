@@ -22,13 +22,14 @@ namespace Voxels.Rendering {
         }
 
         public void Render() {
+            MeshBuffers meshBuffers = VoxelRenderer.Instance.meshBuffers;
             foreach ((int layer, Material material, VoxelLayer voxelLayer) in VoxelLayer.GetLayers(camera.cullingMask)) {
                 if (!renderers.TryGetValue((layer, material), out LayerRenderer renderer)) {
-                    renderer = new LayerRenderer(material, camera, layer, voxelLayer.shaderParams);
+                    renderer = new LayerRenderer(material, camera, layer, voxelLayer.parameters);
                     renderers[(layer, material)] = renderer;
                 }
-                renderer.SetBuffers(voxelLayer.data.gpu.chunks.buffer, voxelLayer.data.gpu.faces.buffer, voxelLayer.data.gpu.colors.buffer, voxelLayer.data.gpu.transforms?.buffer);
-                renderer.Cull(voxelLayer.data.gpu.chunks.Length);
+                renderer.SetBuffers(voxelLayer.layerBuffers.chunksBuffer, meshBuffers.facesBuffer, meshBuffers.colorsBuffer, voxelLayer.layerBuffers.transformsBuffer);
+                renderer.Cull(voxelLayer.layerBuffers.chunks.Length);
                 renderer.Render();
             }
         }

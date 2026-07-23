@@ -14,13 +14,9 @@ namespace Voxels.Rendering {
     /// <summary>
     /// Mesh generator from voxel collections
     /// </summary>
-    [BurstCompile]
     internal class MeshGenerator {
-        private readonly GenerationParameters parameters;
-        private readonly bool textured;
-
-        private readonly LayerData layer;
-        private readonly Dictionary<VoxelColumns, List<(MeshData data, JobHandle handle)>> jobs = new();
+        private readonly MeshBuffers buffers;
+        private readonly Dictionary<GenerationCommand, List<(MeshData data, JobHandle handle)>> jobs = new();
 
         public int JobCount => jobs.Sum(kv => kv.Value.Count);
         public int CompletedCount => jobs.Sum(kv => kv.Value.Count(j => j.handle.IsCompleted));
@@ -29,54 +25,44 @@ namespace Voxels.Rendering {
         /// <summary>
         /// Create a mesh generator
         /// </summary>
-        /// <param name="textured">
-        /// Whether the meshes should use a texture (=> faces contain a texture coordinate, greedy mesher can combine faces with different colors)
-        /// or not (=> faces contain the color directly, greedy mesher can't combine faces with different colors)
-        /// </param>
-        /// <param name="parameters">Generation parameters</param>
-        public MeshGenerator(LayerData layer, bool textured, GenerationParameters parameters) {
-            if (parameters.chunkSize <= 0 || parameters.chunkSize > VoxelFace.maxSize)
-                throw new ArgumentException($"Chunk size must be positive and can't exceed {VoxelFace.maxSize}", nameof(parameters.chunkSize));
-            this.textured = textured;
-            this.parameters = parameters;
-            this.layer = layer;
+        /// <param name="buffers">Buffers where the results will be added</param>
+        public MeshGenerator(MeshBuffers buffers) {
+            this.buffers = buffers;
         }
         
 
         /// <summary>
         /// Complete the generation jobs of a mesh and add their results
         /// </summary>
-        /// <param name="voxels">Voxels that were passed to Schedule</param>
-        /// <param name="startInstance">Index of the first instance of the mesh</param>
-        public void Complete(VoxelColumns voxels, int startInstance) {
-            if (!jobs.TryGetValue(voxels, out List<(MeshData data, JobHandle handle)> meshJobs)) return;
+        /// <param name="command">Command that was passed to Schedule</param>
+        public void Complete(GenerationCommand command) {
+            if (!jobs.TryGetValue(command, out List<(MeshData data, JobHandle handle)> meshJobs)) return;
             foreach ((MeshData data, JobHandle handle) in meshJobs) {
                 handle.Complete();
-                AddData(data, startInstance);
+                AddData(command, data);
                 data.Dispose();
             }
-            jobs.Remove(voxels);
+            jobs.Remove(command);
         }
 
         /// <summary>
         /// Complete the generation jobs of a mesh that are completed and add their results
         /// </summary>
-        /// <param name="voxels">Voxels that were passed to Schedule</param>
-        /// <param name="startInstance">Index of the first instance of the mesh</param>
+        /// <param name="command">Command that was passed to Schedule</param>
         /// <returns>Whether all remaining jobs for that mesh were completed</returns>
-        public bool CompleteCompleted(VoxelColumns voxels, int startInstance) {
-            if (!jobs.TryGetValue(voxels, out List<(MeshData data, JobHandle handle)> meshJobs)) return true;
+        public bool CompleteCompleted(GenerationCommand command) {
+            if (!jobs.TryGetValue(command, out List<(MeshData data, JobHandle handle)> meshJobs)) return true;
             for (int i = 0; i < meshJobs.Count; i++) {
                 if (meshJobs[i].handle.IsCompleted) {
                     meshJobs[i].handle.Complete();
                     MeshData data = meshJobs[i].data;
-                    AddData(data, startInstance);
+                    AddData(command, data);
                     data.Dispose();
                     meshJobs.RemoveAtSwapBack(i);
                 }
             }
             if (meshJobs.Count == 0) {
-                jobs.Remove(voxels);
+                jobs.Remove(command);
                 return true;
             }
             return false;
@@ -97,24 +83,27 @@ namespace Voxels.Rendering {
 
 
         /// <summary>
-        /// Schedule generation of meshes from a voxel collection
+        /// Schedule generation of a mesh if the mesh wasn't already generated 
         /// </summary>
-        /// <param name="voxels">The voxels</param>
-        /// <param name="offset">Offset to add to the positions</param>
-        public void Schedule(VoxelColumns voxels, float3 offset) {
-            if (jobs.ContainsKey(voxels)) throw new InvalidOperationException("Generation of this mesh has already been scheduled");
+        /// <param name="command">Generation command</param>
+        /// <param name="jobHorizontalSize">Max horizontal size a generator job can process</param>
+        public void Schedule(GenerationCommand command, int jobHorizontalSize) {
+            if (buffers.ContainsCommand(command) || jobs.ContainsKey(command)) return;
+            if (command.chunkSize <= 0 || command.chunkSize > VoxelFace.maxSize)
+                throw new ArgumentException($"Chunk size must be positive and can't exceed {VoxelFace.maxSize}", nameof(command.chunkSize));
+            
             List<(MeshData data, JobHandle handle)> meshJobs = new();
-            jobs[voxels] = meshJobs;
-            int nJobsX = (int)math.ceil((float)voxels.sizeX / parameters.jobHorizontalSize);
-            int nJobsZ = (int)math.ceil((float)voxels.sizeZ / parameters.jobHorizontalSize);
+            jobs[command] = meshJobs;
+            int nJobsX = (int)math.ceil((float)command.voxels.sizeX / jobHorizontalSize);
+            int nJobsZ = (int)math.ceil((float)command.voxels.sizeZ / jobHorizontalSize);
             for (int jobZ = 0, i = 0; jobZ < nJobsZ; jobZ++) {
                 for (int jobX = 0; jobX < nJobsX; jobX++, i++) {
-                    int jobStartX = jobX * parameters.jobHorizontalSize;
-                    int jobStartZ = jobZ * parameters.jobHorizontalSize;
-                    int jobSizeX = math.min(parameters.jobHorizontalSize, voxels.sizeX - jobStartX);
-                    int jobSizeZ = math.min(parameters.jobHorizontalSize, voxels.sizeZ - jobStartZ);
+                    int jobStartX = jobX * jobHorizontalSize;
+                    int jobStartZ = jobZ * jobHorizontalSize;
+                    int jobSizeX = math.min(jobHorizontalSize, command.voxels.sizeX - jobStartX);
+                    int jobSizeZ = math.min(jobHorizontalSize, command.voxels.sizeZ - jobStartZ);
                     MeshData data = new(true);
-                    GeneratorJob job = new(voxels, jobStartX, jobStartZ, jobSizeX, jobSizeZ, offset, parameters.chunkSize, parameters.mergeNormalsThreshold, parameters.seenFromAbove, textured, data);
+                    GeneratorJob job = new(command.voxels, jobStartX, jobStartZ, jobSizeX, jobSizeZ, command.chunkSize, command.mergeNormalsThreshold, command.seenFromAbove, command.textured, data);
                     JobHandle handle = job.Schedule();
                     meshJobs.Add((data, handle));
                 }
@@ -125,62 +114,29 @@ namespace Voxels.Rendering {
         /// <summary>
         /// Add the result of a job to the layer
         /// </summary>
-        /// <param name="layer">Layer data</param>
+        /// <param name="command">Command that was passed to Schedule</param>
         /// <param name="data">Job output data</param>
-        /// <param name="textured">Whether the meshes use a texture</param>
-        private void AddData(MeshData data, int startInstance) {
-            AddData(ref layer.cpu, in data, startInstance, textured);
-            layer.gpu.chunks.AddRange(layer.cpu.chunks.AsArray().GetSubArray(layer.gpu.chunks.Length, layer.cpu.chunks.Length - layer.gpu.chunks.Length));
-            layer.gpu.faces.AddRange(layer.cpu.faces.AsArray().GetSubArray(layer.gpu.faces.Length, layer.cpu.faces.Length - layer.gpu.faces.Length));
-            layer.gpu.colors.AddRange(layer.cpu.colors.AsArray().GetSubArray(layer.gpu.colors.Length, layer.cpu.colors.Length - layer.gpu.colors.Length));
-        }
-
-        [BurstCompile]
-        private static void AddData(ref CPULayerData layer, in MeshData data, int startInstance, bool textured) {
-            // Increase capacity
-            layer.faces.Capacity = layer.faces.Length + data.faces.Length;
-            layer.chunks.Capacity = layer.chunks.Length + data.chunks.Length;
-            if (textured) layer.colors.Capacity = layer.colors.Length + data.colors.Length;
+        private void AddData(GenerationCommand command, MeshData data) {
+            NativeList<VoxelChunk> chunks = buffers.GetChunks(command);
+            int startFace = buffers.faces.Length;
+            int startColor = buffers.colors.Length;
 
             // Add chunks
-            int startFace = layer.faces.Length;
-            int startColor = layer.colors.Length;
+            chunks.Capacity = chunks.Length + data.chunks.Length;
             foreach (VoxelChunk chunk in data.chunks) {
-                layer.chunks.Add(new VoxelChunk(
+                chunks.Add(new VoxelChunk(
                     chunk.center, chunk.size, chunk.offset.position, chunk.offset.Color + startColor,
-                    chunk.Normal, chunk.StartFace + startFace, chunk.FaceCount, startInstance, 0, 0
+                    chunk.Normal, chunk.StartFace + startFace, chunk.FaceCount, 0, 0, 0
                 ));
             }
 
             // Add faces and colors
-            if (textured) {
-                foreach (VoxelFace face in data.faces) {
-                    layer.faces.Add(face);
-                }
-                foreach (Color32 color in data.colors) {
-                    layer.colors.Add(color);
-                }
-            }
-            else {
-                // Merge colors
-                UnsafeArray<int> colorMap = new(data.colors.Length, Allocator.Temp);
-                foreach (KVPair<uint, int> kv in data.colorIndices) {
-                    if (layer.colorIndices.TryGetValue(kv.Key, out int index)) {
-                        colorMap[kv.Value] = index;
-                    }
-                    else {
-                        colorMap[kv.Value] = layer.colorIndices.Count;
-                        layer.colorIndices[kv.Key] = layer.colorIndices.Count;
-                        layer.colors.Add(Identifiers.IdToColor(kv.Key));
-                    }
-                }
-                if (data.colorIndices.Count > VoxelFace.maxColor) throw new InvalidOperationException($"Number of colors can't exceed {VoxelFace.maxColor}");
+            buffers.faces.AddRange(data.faces.AsArray());
+            buffers.colors.AddRange(data.colors.AsArray());
 
-                foreach (VoxelFace face in data.faces) {
-                    layer.faces.Add(new VoxelFace(face.Position, face.Width, face.Height, face.Normal, colorMap[face.Color]));
-                }
-                colorMap.Dispose();
-            }
+            // Synchronize buffers
+            buffers.SynchronizeFaces(startFace, buffers.faces.Length - startFace);
+            buffers.SynchronizeColors(startColor, buffers.colors.Length - startColor);
         }
 
 
@@ -192,7 +148,6 @@ namespace Voxels.Rendering {
             [ReadOnly] private readonly VoxelColumns voxels; // All voxels
             private readonly int startX, startZ; // Start of the part to generate
             private readonly int sizeX, sizeZ; // Size of the part to generate
-            private readonly float3 offset;
             private readonly int chunkSize;
             private readonly int mergeNormalsThreshold;
             private readonly bool seenFromAbove;
@@ -214,7 +169,6 @@ namespace Voxels.Rendering {
             public GeneratorJob(
                 VoxelColumns voxels,
                 int startX, int startZ, int sizeX, int sizeZ,
-                float3 offset,
                 int chunkSize, int mergeNormalsThreshold, bool seenFromAbove, bool textured,
                 MeshData data
             ) {
@@ -223,7 +177,6 @@ namespace Voxels.Rendering {
                 this.startZ = startZ;
                 this.sizeX = sizeX;
                 this.sizeZ = sizeZ;
-                this.offset = offset;
                 this.chunkSize = chunkSize;
                 this.mergeNormalsThreshold = mergeNormalsThreshold;
                 this.seenFromAbove = seenFromAbove;
@@ -262,7 +215,7 @@ namespace Voxels.Rendering {
                                 max = math.max(max, voxels.GetMax(x, z));
                                 foreach (Voxel voxel in voxels.GetColumn(x, z)) {
                                     if (!textured && !Voxel.Color32Equals(voxel.color, Voxel.ghost)) {
-                                        uint id = Identifiers.ColorToId(voxel.color);
+                                        int id = Voxel.Color32HashCode(voxel.color);
                                         if (!data.colorIndices.ContainsKey(id)) {
                                             data.colorIndices[id] = data.colors.Length;
                                             data.colors.Add(voxel.color);
@@ -276,6 +229,7 @@ namespace Voxels.Rendering {
                     }
                 }
                 if (textured) nIDs = 1;
+                else if (nIDs > VoxelFace.maxColor) throw new InvalidOperationException($"Number of colors can't exceed {VoxelFace.maxColor}");
 
                 // Generate all chunks
                 rows = new UnsafeArray<ulong>(subChunkSize * subChunkSize * 3, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
@@ -429,7 +383,7 @@ namespace Voxels.Rendering {
                             }
                             Color32 color = voxels.GetVoxel(posDepth);
                             if (Voxel.Color32Equals(color, Voxel.ghost)) continue;
-                            int index = textured ? 0 : data.colorIndices[Identifiers.ColorToId(color)];
+                            int index = textured ? 0 : data.colorIndices[Voxel.Color32HashCode(color)];
                             planes[y + depth * subChunkSize + index * subChunkSize * subChunkSize + 2 * axis * subChunkSize * subChunkSize * nIDs] |= 1UL << x;
                         }
 
@@ -451,7 +405,7 @@ namespace Voxels.Rendering {
                             }
                             Color32 color = voxels.GetVoxel(posDepth);
                             if (Voxel.Color32Equals(color, Voxel.ghost)) continue;
-                            int index = textured ? 0 : data.colorIndices[Identifiers.ColorToId(color)];
+                            int index = textured ? 0 : data.colorIndices[Voxel.Color32HashCode(color)];
                             planes[y + depth * subChunkSize + index * subChunkSize * subChunkSize + (2 * axis + 1) * subChunkSize * subChunkSize * nIDs] |= 1UL << x;
                         }
 
@@ -530,7 +484,7 @@ namespace Voxels.Rendering {
                     int3 max = int.MinValue;
                     VoxelNormal chunkNormal = VoxelNormal.None;
                     int faceCount = 0;
-                    int startColor = data.colors.Length;
+                    int startColor = textured ? data.colors.Length : 0;
 
                     // Add all faces of a chunk
                     while (faceCount < VoxelRenderer.maxFaceCount) {
@@ -583,7 +537,7 @@ namespace Voxels.Rendering {
 
                     if (faceCount > 0) {
                         data.chunks.Add(new VoxelChunk(
-                            offset + (float3)(max + min) / 2f, (float3)(max - min) / 2f, offset + currentChunkStart,
+                            voxels.offset + (float3)(max + min) / 2f, voxels.offset + (float3)(max - min) / 2f, voxels.offset + currentChunkStart,
                             startColor, chunkNormal, startFace, faceCount, 0, 0, 0
                         ));
                         startFace += faceCount;
@@ -598,7 +552,7 @@ namespace Voxels.Rendering {
             public NativeList<VoxelFace> faces;
             public NativeList<VoxelChunk> chunks;
             public NativeList<Color32> colors;
-            public NativeHashMap<uint, int> colorIndices;
+            public NativeHashMap<int, int> colorIndices;
 
             public MeshData(bool _) {
                 faces = new(Allocator.Persistent);
@@ -614,16 +568,6 @@ namespace Voxels.Rendering {
                 colorIndices.Dispose();
             }
         }
-    }
-
-
-
-    /// <summary>
-    /// Convert data to and from identifiers
-    /// </summary>
-    internal static class Identifiers {
-        public static uint ColorToId(Color32 color) => color.r | (uint)color.g << 8 | (uint)color.b << 16 | (uint)color.a << 24;
-        public static Color32 IdToColor(uint id) => new((byte)(id & 0xFF), (byte)(id >> 8 & 0xFF), (byte)(id >> 16 & 0xFF), (byte)(id >> 24 & 0xFF));
     }
 
 }

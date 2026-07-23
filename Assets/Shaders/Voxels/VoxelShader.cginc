@@ -1,10 +1,6 @@
 #ifndef VOXEL_SHADER_CGINC
 #define VOXEL_SHADER_CGINC
 
-#if defined(_VOXEL_INSTANCE_ON)
-#error Instancing isn't supported yet
-#endif
-
 #if defined(_VOXEL_INSTANCE_ON) && !defined(_VOXEL_TRANSFORM_ON)
 #error _VOXEL_INSTANCE can't be enabled without _VOXEL_TRANSFORM
 #endif
@@ -133,7 +129,7 @@ VoxelData unpackVertex(uint vertexID: SV_VertexID, uint instanceID: SV_InstanceI
     o.facePosition = uint2(incWidth, incHeight) * uint2(width, height);
     o.colorIndex = colorID + offset.color;
 #else
-    o.color = getColor(colors[colorID]);
+    o.color = getColor(colors[colorID + offset.color]);
 #endif
     return o;
 }

@@ -16,13 +16,15 @@ namespace Voxels.Collections {
     [BurstCompile]
     public readonly unsafe struct VoxelColumns {
         public readonly int sizeX, sizeZ; // Size in the x and z dimensions
+        public readonly float3 offset; // Position offset
         internal readonly NativeArray<Column> columns; // All columns
         internal readonly NativeArray<int> startIndices; // [sizeX * sizeZ + 1] sized array giving the start index of each column
 
 
-        internal VoxelColumns(int sizeX, int sizeZ, NativeArray<Column> columns, NativeArray<int> startIndices) {
+        internal VoxelColumns(int sizeX, int sizeZ, float3 offset, NativeArray<Column> columns, NativeArray<int> startIndices) {
             this.sizeX = sizeX;
             this.sizeZ = sizeZ;
+            this.offset = offset;
             this.columns = columns;
             this.startIndices = startIndices;
         }
@@ -34,23 +36,31 @@ namespace Voxels.Collections {
         public VoxelColumns(string path) {
             byte[] array = File.ReadAllBytes(path);
             NativeArray<byte> nativeArray = new(array, Allocator.Persistent);
-            int offset = 0;
-            sizeX = BitConverter.ToInt32(array, offset);
-            sizeZ = BitConverter.ToInt32(array, offset + sizeof(int));
-            int nVoxels = BitConverter.ToInt32(array, offset + 2 * sizeof(int));
-            offset += 3 * sizeof(int);
-            columns = nativeArray.GetSubArray(offset, nVoxels * sizeof(Column)).Reinterpret<Column>(1);
+            int start = 0;
+            sizeX = BitConverter.ToInt32(array, start);
+            sizeZ = BitConverter.ToInt32(array, start + sizeof(int));
+            int nVoxels = BitConverter.ToInt32(array, start + 2 * sizeof(int));
+            start += 3 * sizeof(int);
+            offset = new float3(
+                BitConverter.ToSingle(array, start),
+                BitConverter.ToSingle(array, start + sizeof(float)),
+                BitConverter.ToSingle(array, start + 2 * sizeof(float))
+            );
+            start += 3 * sizeof(float);
+            columns = nativeArray.GetSubArray(start, nVoxels * sizeof(Column)).Reinterpret<Column>(1);
             offset += nVoxels * sizeof(Column);
-            startIndices = nativeArray.GetSubArray(offset, (sizeX * sizeZ + 1) * sizeof(int)).Reinterpret<int>(1);
+            startIndices = nativeArray.GetSubArray(start, (sizeX * sizeZ + 1) * sizeof(int)).Reinterpret<int>(1);
         }
 
         /// <summary>
         /// Create voxel columns from a height map
         /// </summary>
         /// <param name="map">Highest voxel in each column</param>
-        public VoxelColumns(Native2DArray<Voxel> map) {
+        /// <param name="offset">Position offset</param>
+        public VoxelColumns(Native2DArray<Voxel> map, float3 offset) {
             sizeX = map.sizeX;
             sizeZ = map.sizeY;
+            this.offset = offset;
             FromHeightMap(in map, out columns, out startIndices);
         }
 
@@ -58,9 +68,11 @@ namespace Voxels.Collections {
         /// Create voxel columns from a 3D color array
         /// </summary>
         /// <param name="colors">Color of each voxel</param>
-        public VoxelColumns(Native3DArray<Color32> colors) {
+        /// <param name="offset">Position offset</param>
+        public VoxelColumns(Native3DArray<Color32> colors, float3 offset) {
             sizeX = colors.sizeX;
             sizeZ = colors.sizeZ;
+            this.offset = offset;
             FromColorArray(in colors, out columns, out startIndices);
         }
 
@@ -154,6 +166,9 @@ namespace Voxels.Collections {
             file.Write(BitConverter.GetBytes(sizeX));
             file.Write(BitConverter.GetBytes(sizeZ));
             file.Write(BitConverter.GetBytes(columns.Length));
+            file.Write(BitConverter.GetBytes(offset.x));
+            file.Write(BitConverter.GetBytes(offset.y));
+            file.Write(BitConverter.GetBytes(offset.z));
             file.Write(columns.Reinterpret<byte>(sizeof(Column)).ToArray());
             file.Write(startIndices.Reinterpret<byte>(sizeof(int)).ToArray());
         }
@@ -305,6 +320,9 @@ namespace Voxels.Collections {
 
         public static bool Color32Equals(Color32 x, Color32 y)
             => x.r == y.r && x.g == y.g && x.b == y.b && x.a == y.a;
+
+        public static int Color32HashCode(Color32 x)
+            => x.r | x.g << 8 | x.b << 16 | x.a << 24;
     }
     
 }

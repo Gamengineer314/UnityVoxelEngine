@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Unity.Collections;
 using UnityEngine;
 
 namespace Voxels.Rendering {
@@ -7,25 +8,28 @@ namespace Voxels.Rendering {
     /// Rendering layer that contains all meshes in a layer with a material
     /// </summary>
     internal class VoxelLayer {
-        public readonly ShaderParameters shaderParams;
-        public readonly LayerData data;
-
+        public readonly ShaderParameters parameters;
+        public readonly LayerBuffers layerBuffers;
+        private readonly MeshBuffers meshBuffers;
         private readonly MeshGenerator generator;
-        private readonly List<(VoxelMesh mesh, bool generated)> meshes = new();
-        private readonly Dictionary<VoxelMesh, int> indices = new(); // Index of each mesh in [meshes]
-        
 
+        private readonly List<(GenerationCommand command, bool generated)> meshes = new();
+        private readonly List<List<VoxelMesh>> instances = new();
+        
         private static readonly Dictionary<Material, VoxelLayer[]> layers = new();
 
-        public VoxelLayer(ShaderParameters shaderParams, GenerationParameters generationParams) {
-            this.shaderParams = shaderParams;
-            data = new LayerData(shaderParams);
-            generator = new MeshGenerator(data, shaderParams.texture, generationParams);
+
+        public VoxelLayer(ShaderParameters parameters) {
+            this.parameters = parameters;
+            layerBuffers = new LayerBuffers(parameters);
+            meshBuffers = VoxelRenderer.Instance.meshBuffers;
+            generator = new MeshGenerator(meshBuffers);
+            if (!parameters.instance) instances.Add(new List<VoxelMesh>());
         }
 
         public void Dispose() {
             generator.Dispose();
-            data.Dispose();
+            layerBuffers.Dispose();
         }
 
 
@@ -42,7 +46,8 @@ namespace Voxels.Rendering {
                 material.SetFloat(ShaderID.quadsInterleaving, VoxelRenderer.Instance.QuadsInterleaving);
             }
             if (materialLayers[layer] == null) {
-                materialLayers[layer] = new VoxelLayer(new ShaderParameters(material), VoxelRenderer.Instance.generationParameters[layer]);
+                ShaderParameters parameters = new(material);
+                materialLayers[layer] = new VoxelLayer(parameters);
             }
             return materialLayers[layer];
         }
@@ -55,7 +60,7 @@ namespace Voxels.Rendering {
         public static IEnumerable<(int, Material, VoxelLayer)> GetLayers(int layerMask) {
             foreach (KeyValuePair<Material, VoxelLayer[]> kv in layers) {
                 for (int layer = 0; layer < 32; layer++) {
-                    if ((layerMask & (1 << layer)) != 0 && kv.Value[layer] != null && kv.Value[layer].data.cpu.chunks.Length != 0) {
+                    if ((layerMask & (1 << layer)) != 0 && kv.Value[layer] != null && kv.Value[layer].layerBuffers.chunks.Length != 0) {
                         yield return (layer, kv.Key, kv.Value[layer]);
                     }
                 }
@@ -95,18 +100,31 @@ namespace Voxels.Rendering {
         /// Update generation and transform of the objects in this layer
         /// </summary>
         public void Update() {
+            // Add chunks for completed meshes
             for (int i = 0; i < meshes.Count; i++) {
-                VoxelMesh mesh = meshes[i].mesh;
-                if (!meshes[i].generated) { // Update generation
-                    if (generator.CompleteCompleted(mesh.voxels, i)) {
-                        meshes[i] = (mesh, true);
+                if (!meshes[i].generated && generator.CompleteCompleted(meshes[i].command)) {
+                    meshes[i] = (meshes[i].command, true);
+                    int startChunk = layerBuffers.chunks.Length;
+                    foreach (VoxelChunk chunk in meshBuffers.GetChunks(meshes[i].command)) {
+                        layerBuffers.chunks.Add(new VoxelChunk(
+                            chunk.center, chunk.size, chunk.offset.position, chunk.offset.Color,
+                            chunk.Normal, chunk.StartFace, chunk.FaceCount, i, 0, 0
+                        ));
                     }
+                    layerBuffers.SynchronizeChunks(startChunk, layerBuffers.chunks.Length - startChunk);
                 }
-                if (shaderParams.transform) { // Update transform 
-                    Matrix4x4 transform = mesh.transform.localToWorldMatrix;
-                    if (transform != data.cpu.transforms[i]) {
-                        data.cpu.transforms[i] = transform;
-                        data.gpu.transforms[i] = transform;
+            }
+
+            // Update transforms
+            for (int i = 0; i < instances.Count; i++) {
+                for (int j = 0; j < instances[i].Count; j++) {
+                    VoxelMesh instance = instances[i][j];
+                    if (parameters.transform) {
+                        Matrix4x4 transform = instance.transform.localToWorldMatrix;
+                        if (transform != layerBuffers.transforms[j]) {
+                            layerBuffers.transforms[j] = transform;
+                            layerBuffers.SynchronizeTransforms(i, 1);
+                        }
                     }
                 }
             }
@@ -118,14 +136,15 @@ namespace Voxels.Rendering {
         /// </summary>
         /// <param name="mesh">The mesh</param>
         public void AddObject(VoxelMesh mesh) {
-            indices[mesh] = meshes.Count;
-            meshes.Add((mesh, false));
-            if (shaderParams.transform) {
+            GenerationCommand command = GetCommand(mesh);
+            meshes.Add((command, false));
+            generator.Schedule(command, mesh.parameters.jobHorizontalSize);
+            instances[0].Add(mesh);
+            if (parameters.transform) {
                 Matrix4x4 transform = mesh.transform.localToWorldMatrix;
-                data.cpu.transforms.Add(transform);
-                data.gpu.transforms.Add(transform);
+                layerBuffers.transforms.Add(transform);
+                layerBuffers.SynchronizeTransforms(layerBuffers.transforms.Length - 1, 1);
             }
-            generator.Schedule(mesh.voxels, mesh.offset);
         }
 
 
@@ -133,13 +152,12 @@ namespace Voxels.Rendering {
         /// Complete generation of a mesh
         /// <param name="mesh">The mesh</param>
         /// </summary>
-        public void CompleteGeneration(VoxelMesh mesh) {
-            int i = indices[mesh];
-            if (!meshes[i].generated) {
-                generator.Complete(mesh.voxels, i);
-                meshes[i] = (mesh, true);
-            }
-        }
+        public void CompleteGeneration(VoxelMesh mesh)
+            => generator.Complete(GetCommand(mesh));
+
+
+        private GenerationCommand GetCommand(VoxelMesh mesh)
+            => new(mesh.voxels, mesh.parameters.chunkSize, mesh.parameters.mergeNormalsThreshold, mesh.parameters.seenFromAbove, parameters.texture);
     }
 
 }

@@ -1,5 +1,6 @@
 using UnityEngine;
 using Unity.Collections;
+using Unity.Mathematics;
 
 namespace Voxels.Collections {
     
@@ -9,6 +10,7 @@ namespace Voxels.Collections {
     [PreferBinarySerialization]
     public class VoxelColumnsAsset : ScriptableObject {
         [SerializeField] private int sizeX, sizeZ;
+        [SerializeField] private float3 offset;
         [SerializeField] [HideInInspector] private VoxelColumns.Column[] columns;
         [SerializeField] [HideInInspector] private int[] startIndices;
         public VoxelColumns voxels { get; private set; }
@@ -23,7 +25,7 @@ namespace Voxels.Collections {
 
         private void OnEnable() {
             if (columns is not null && !voxels.columns.IsCreated) {
-                voxels = new VoxelColumns(sizeX, sizeZ, new(columns, Allocator.Persistent), new(startIndices, Allocator.Persistent));
+                voxels = new VoxelColumns(sizeX, sizeZ, offset, new(columns, Allocator.Persistent), new(startIndices, Allocator.Persistent));
             }
         }
 

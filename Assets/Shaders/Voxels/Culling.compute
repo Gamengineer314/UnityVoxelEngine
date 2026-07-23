@@ -69,14 +69,54 @@ bool normalCulling(float3 center, float3 size, uint normalID TRANSFORM_DECL) {
 
 
 #ifdef VOXEL_INSTANCE
-[numthreads(1,1,1)]
+
+#define GROUP_SIZE
+
+groupshared uint sum[GROUP_SIZE];
+
+[numthreads(GROUP_SIZE, 1, 1)]
+void cull(uint3 group : SV_GroupID, uint thread : SV_GroupThreadID) {
+    VoxelChunk chunk = chunks[group.x];
+    uint count = 0;
+
+    // Add instances to renderedTransforms
+    for (uint i = 0; i < chunk.instanceCount; i += GROUP_SIZE) {
+        bool add;
+        float4x4 transform;
+        if (i + thread.x < chunk.instanceCount) {
+            transform = transforms[chunk.startInstance + i + thread.x];
+            add = normalCulling(chunk.center, chunk.size, chunk.normal TRANSFORM_VAL) && boundsCulling(chunk.center, chunk.size TRANSFORM_VAL);
+        }
+        else add = 0;
+        
+        // Prefix sum
+        sum[thread.x] = add;
+        GroupMemoryBarrierWithGroupSync();
+        for (uint bit = 1; bit < GROUP_SIZE / 2; bit <<= 1) {
+            if (thread.x & bit) sum[thread.x] += sum[(thread.x & -bit) - 1];
+            GroupMemoryBarrierWithGroupSync();
+        }
+
+        if (add) renderedTransforms[chunk.startRenderedInstance + count + sum[thread.x] - 1] = transform;
+        count += sum[GROUP_SIZE - 1];
+    }
+
+    // Add command if some instances were added
+    if (thread.x == 0 && count > 0) {
+        uint cmd = offsets.IncrementCounter();
+        commands[cmd * 5] = chunk.faceCount * 6; // indexCountPerInstance
+        commands[cmd * 5 + 1] = count; // instanceCount
+        commands[cmd * 5 + 3] = chunk.startFace * 4; // baseVertexIndex
+        commands[cmd * 5 + 4] = chunk.startRenderedInstance; // startInstance
+        offsets[cmd] = chunk.offset;
+    }
+}
+
 #else
-[numthreads(64,1,1)]
-#endif
+
+[numthreads(64, 1, 1)]
 void cull(uint3 id : SV_DispatchThreadID) {
-#ifndef VOXEL_INSTANCE
     if (id.x >= nChunks) return;
-#endif
     VoxelChunk chunk = chunks[id.x];
 #ifdef VOXEL_TRANSFORM
     float4x4 transform = transforms[chunk.startInstance];
@@ -87,12 +127,9 @@ void cull(uint3 id : SV_DispatchThreadID) {
         commands[cmd * 5 + 3] = chunk.startFace * 4; // baseVertexIndex
         offsets[cmd] = chunk.offset;
 #ifdef VOXEL_TRANSFORM
-#ifdef VOXEL_INSTANCE
-        commands[cmd * 5 + 4] = chunk.startRenderedInstance; // startInstance
-        renderedTransforms[chunk.startRenderedInstance] = transform;
-#else
         renderedTransforms[cmd] = transform;
-#endif
 #endif
     }
 }
+
+#endif

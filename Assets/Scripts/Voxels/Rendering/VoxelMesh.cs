@@ -7,6 +7,7 @@ namespace Voxels.Rendering {
     [ExecuteInEditMode]
     public class VoxelMesh : MonoBehaviour {
         [SerializeField] internal VoxelColumnsAsset voxelsAsset;
+        [SerializeField] internal GenerationParameters parameters;
         [SerializeField] internal Material material;
         [SerializeField] internal Vector3 offset;
         internal VoxelColumns voxels;
