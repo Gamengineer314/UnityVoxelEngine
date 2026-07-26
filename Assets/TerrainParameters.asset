@@ -15,4 +15,4 @@ MonoBehaviour:
   chunkSize: 64
   mergeNormalsThreshold: 1024
   jobHorizontalSize: 1024
-  seenFromAbove: 0
+  seenFromAbove: 1

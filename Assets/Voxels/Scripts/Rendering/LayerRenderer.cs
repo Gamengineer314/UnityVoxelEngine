@@ -39,7 +39,7 @@ namespace Voxels.Rendering {
         /// <summary>
         /// Set the buffers used for culling and rendering
         /// </summary>
-        internal unsafe void SetBuffers(GraphicsBuffer chunksBuffer, GraphicsBuffer facesBuffer, GraphicsBuffer colorsBuffer, GraphicsBuffer transformsBuffer) {
+        internal unsafe void SetBuffers(GraphicsBuffer chunksBuffer, GraphicsBuffer facesBuffer, GraphicsBuffer colorsBuffer, GraphicsBuffer transformsBuffer, int renderedTransformsSize) {
             ComputeShader cullingShader = VoxelRenderer.Instance.cullingShader;
             renderParams.matProps.SetBuffer(ShaderID.faces, facesBuffer);
             renderParams.matProps.SetBuffer(ShaderID.colors, colorsBuffer);
@@ -52,11 +52,11 @@ namespace Voxels.Rendering {
                 offsetsBuffer?.Dispose();
                 offsetsBuffer = new(GraphicsBuffer.Target.Structured | GraphicsBuffer.Target.Counter, chunksBuffer.count, sizeof(CommandOffset));
                 renderParams.matProps.SetBuffer(ShaderID.offsets, offsetsBuffer);
-                if (parameters.transform) {
-                    renderedTransformsBuffer?.Dispose();
-                    renderedTransformsBuffer = new(GraphicsBuffer.Target.Structured, chunksBuffer.count, sizeof(Matrix4x4));
-                    renderParams.matProps.SetBuffer(ShaderID.renderedTransforms, renderedTransformsBuffer);
-                }
+            }
+            if (parameters.transform && (renderedTransformsBuffer == null || renderedTransformsBuffer.count != renderedTransformsSize)) {
+                renderedTransformsBuffer?.Dispose();
+                renderedTransformsBuffer = new(GraphicsBuffer.Target.Structured, renderedTransformsSize, sizeof(Matrix4x4));
+                renderParams.matProps.SetBuffer(ShaderID.renderedTransforms, renderedTransformsBuffer);
             }
             cullingShader.SetBuffer(0, ShaderID.chunks, chunksBuffer);
             cullingShader.SetBuffer(0, ShaderID.commands, commandsBuffer);

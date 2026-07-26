@@ -85,8 +85,8 @@ namespace Voxels.Editor {
                     byte.Parse(words[5], CultureInfo.InvariantCulture),
                     255
                 );
-                min = math.select(min, vertices[i], vertices[i] < min);
-                max = math.select(max, vertices[i], vertices[i] > max);
+                min = math.min(min, vertices[i]);
+                max = math.max(max, vertices[i]);
             }
 
             // Read cubes

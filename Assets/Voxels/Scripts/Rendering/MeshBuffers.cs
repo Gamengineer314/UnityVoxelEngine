@@ -10,14 +10,14 @@ namespace Voxels.Rendering {
     internal class MeshBuffers {
         public GraphicsBuffer facesBuffer;
         public GraphicsBuffer colorsBuffer;
-        public NativeList<VoxelFace> faces;
-        public NativeList<Color32> colors;
+        private NativeList<VoxelFace> faces;
+        private NativeList<Color32> colors;
         private readonly Dictionary<GenerationCommand, NativeList<VoxelChunk>> chunks = new();
 
 
         public unsafe MeshBuffers() {
-            facesBuffer = new(GraphicsBuffer.Target.Structured, 4096, sizeof(VoxelFace));
-            colorsBuffer = new(GraphicsBuffer.Target.Structured, 4096, sizeof(Color32));
+            facesBuffer = new(GraphicsBuffer.Target.Structured, BufferUtility.minLength, sizeof(VoxelFace));
+            colorsBuffer = new(GraphicsBuffer.Target.Structured, BufferUtility.minLength, sizeof(Color32));
             faces = new(Allocator.Persistent);
             colors = new(Allocator.Persistent);
         }
@@ -56,13 +56,38 @@ namespace Voxels.Rendering {
 
 
         /// <summary>
+        /// Add a new part of a mesh associated with a command
+        /// </summary>
+        /// <param name="command">The command</param>
+        /// <param name="newChunks">New chunks</param>
+        /// <param name="newFaces">New faces</param>
+        /// <param name="newColors">New colors</param>
+        public void AddData(GenerationCommand command, NativeList<VoxelChunk> newChunks, NativeList<VoxelFace> newFaces, NativeList<Color32> newColors) {
+            NativeList<VoxelChunk> commandChunks = GetChunks(command);
+            commandChunks.Capacity = commandChunks.Length + newChunks.Length;
+            int startFace = faces.Length;
+            int startColor = colors.Length;
+            foreach (VoxelChunk chunk in newChunks) {
+                commandChunks.Add(new VoxelChunk(
+                    chunk.center, chunk.size, chunk.offset.position, chunk.offset.Color + startColor,
+                    chunk.Normal, chunk.StartFace + startFace, chunk.FaceCount, 0, 0, 0
+                ));
+            }
+            faces.AddRange(newFaces.AsArray());
+            colors.AddRange(newColors.AsArray());
+            SynchronizeFaces(startFace, newFaces.Length);
+            SynchronizeColors(startColor, newColors.Length);
+        }
+
+
+        /// <summary>
         /// Synchronize a range of the faces buffer with the array
         /// </summary>
         /// <param name="start">Start of the range</param>
         /// <param name="count">Number of items in the range</param>
         public void SynchronizeFaces(int start, int count) {
             if (faces.Length > facesBuffer.count) {
-                BufferUtility.Grow(ref facesBuffer, faces.AsArray());
+                BufferUtility.Resize(ref facesBuffer, faces.AsArray());
             }
             else facesBuffer.SetData(faces.AsArray(), start, start, count);
         }
@@ -74,7 +99,7 @@ namespace Voxels.Rendering {
         /// <param name="count">Number of items in the range</param>
         public void SynchronizeColors(int start, int count) {
             if (colors.Length > colorsBuffer.count) {
-                BufferUtility.Grow(ref colorsBuffer, colors.AsArray());
+                BufferUtility.Resize(ref colorsBuffer, colors.AsArray());
             }
             else colorsBuffer.SetData(colors.AsArray(), start, start, count);
         }

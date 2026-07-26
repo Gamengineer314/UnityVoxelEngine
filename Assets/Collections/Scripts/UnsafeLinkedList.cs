@@ -53,7 +53,7 @@ namespace Unity.Collections.LowLevel.Unsafe {
             buffer[0].next = 0;
             buffer[0].prev = 0;
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
-            for (int i = 0; i < capacity; i++) {
+            for (int i = 1; i < capacity; i++) {
                 buffer[i].prev = -1;
             }
 #endif
@@ -72,20 +72,21 @@ namespace Unity.Collections.LowLevel.Unsafe {
                 reusable = buffer[reusable].next;
             }
             else {
-                if (length + 1 >= capacity) {
+                if (++length >= capacity) {
                     capacity *= 2;
                     Node* newBuffer = AllocatorManager.Allocate<Node>(allocator, capacity);
                     UnsafeUtility.MemCpy(newBuffer, buffer, length * sizeof(Node));
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
                     for (int i = length + 1; i < capacity; i++) {
-                        buffer[i].prev = -1;
+                        newBuffer[i].prev = -1;
                     }
 #endif
                     AllocatorManager.Free(allocator, buffer);
                     buffer = newBuffer;
                 }
-                index = length++;
+                index = length;
             }
+            buffer[index] = node;
             return index;
         }
 
@@ -115,10 +116,9 @@ namespace Unity.Collections.LowLevel.Unsafe {
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
             if (index < 0 || index >= capacity || buffer[index].prev == -1) throw new ArgumentException("Invalid node index");
 #endif
-            ref Node node = ref buffer[index];
-            int newIndex = Add(new Node(value, index, node.next));
-            buffer[node.next].prev = newIndex;
-            node.next = newIndex;
+            int newIndex = Add(new Node(value, buffer[index].next, index));
+            buffer[buffer[index].next].prev = newIndex;
+            buffer[index].next = newIndex;
             return newIndex;
         }
 
@@ -133,10 +133,9 @@ namespace Unity.Collections.LowLevel.Unsafe {
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
             if (index < 0 || index >= capacity || buffer[index].prev == -1) throw new ArgumentException("Invalid node index");
 #endif
-            ref Node node = ref buffer[index];
-            int newIndex = Add(new Node(value, index, node.next));
-            buffer[node.prev].next = newIndex;
-            node.prev = newIndex;
+            int newIndex = Add(new Node(value, index, buffer[index].prev));
+            buffer[buffer[index].prev].next = newIndex;
+            buffer[index].prev = newIndex;
             return newIndex;
         }
 

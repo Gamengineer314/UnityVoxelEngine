@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using Unity.Collections;
+using Unity.Mathematics;
 using UnityEngine;
 
 namespace Voxels.Rendering {
@@ -15,6 +16,7 @@ namespace Voxels.Rendering {
 
         private readonly List<(GenerationCommand command, bool generated)> meshes = new();
         private readonly List<List<VoxelMesh>> instances = new();
+        private readonly Dictionary<GenerationCommand, int> meshIndices = new();
         
         private static readonly Dictionary<Material, VoxelLayer[]> layers = new();
 
@@ -23,12 +25,11 @@ namespace Voxels.Rendering {
             this.parameters = parameters;
             layerBuffers = new LayerBuffers(parameters);
             meshBuffers = VoxelRenderer.Instance.meshBuffers;
-            generator = new MeshGenerator(meshBuffers);
+            generator = VoxelRenderer.Instance.generator;
             if (!parameters.instance) instances.Add(new List<VoxelMesh>());
         }
 
         public void Dispose() {
-            generator.Dispose();
             layerBuffers.Dispose();
         }
 
@@ -60,7 +61,7 @@ namespace Voxels.Rendering {
         public static IEnumerable<(int, Material, VoxelLayer)> GetLayers(int layerMask) {
             foreach (KeyValuePair<Material, VoxelLayer[]> kv in layers) {
                 for (int layer = 0; layer < 32; layer++) {
-                    if ((layerMask & (1 << layer)) != 0 && kv.Value[layer] != null && kv.Value[layer].layerBuffers.chunks.Length != 0) {
+                    if ((layerMask & (1 << layer)) != 0 && kv.Value[layer] != null && kv.Value[layer].layerBuffers.ChunkCount != 0) {
                         yield return (layer, kv.Key, kv.Value[layer]);
                     }
                 }
@@ -104,27 +105,17 @@ namespace Voxels.Rendering {
             for (int i = 0; i < meshes.Count; i++) {
                 if (!meshes[i].generated && generator.CompleteCompleted(meshes[i].command)) {
                     meshes[i] = (meshes[i].command, true);
-                    int startChunk = layerBuffers.chunks.Length;
-                    foreach (VoxelChunk chunk in meshBuffers.GetChunks(meshes[i].command)) {
-                        layerBuffers.chunks.Add(new VoxelChunk(
-                            chunk.center, chunk.size, chunk.offset.position, chunk.offset.Color,
-                            chunk.Normal, chunk.StartFace, chunk.FaceCount, i, 0, 0
-                        ));
-                    }
-                    layerBuffers.SynchronizeChunks(startChunk, layerBuffers.chunks.Length - startChunk);
+                    NativeList<VoxelChunk> chunks = meshBuffers.GetChunks(meshes[i].command);
+                    if (parameters.instance) layerBuffers.SetInstances(i, instances[i].Count, chunks.Length);
+                    layerBuffers.AddChunks(i, chunks, parameters.instance ? instances[i].Count : 0);
                 }
             }
 
             // Update transforms
-            for (int i = 0; i < instances.Count; i++) {
-                for (int j = 0; j < instances[i].Count; j++) {
-                    VoxelMesh instance = instances[i][j];
-                    if (parameters.transform) {
-                        Matrix4x4 transform = instance.transform.localToWorldMatrix;
-                        if (transform != layerBuffers.transforms[j]) {
-                            layerBuffers.transforms[j] = transform;
-                            layerBuffers.SynchronizeTransforms(i, 1);
-                        }
+            if (parameters.transform) {
+                for (int i = 0; i < instances.Count; i++) {
+                    for (int j = 0; j < instances[i].Count; j++) {
+                        layerBuffers.UpdateTransform(i, j, instances[i][j].transform.localToWorldMatrix);
                     }
                 }
             }
@@ -137,13 +128,20 @@ namespace Voxels.Rendering {
         /// <param name="mesh">The mesh</param>
         public void AddObject(VoxelMesh mesh) {
             GenerationCommand command = GetCommand(mesh);
-            meshes.Add((command, false));
-            generator.Schedule(command, mesh.parameters.jobHorizontalSize);
-            instances[0].Add(mesh);
-            if (parameters.transform) {
-                Matrix4x4 transform = mesh.transform.localToWorldMatrix;
-                layerBuffers.transforms.Add(transform);
-                layerBuffers.SynchronizeTransforms(layerBuffers.transforms.Length - 1, 1);
+            if (parameters.instance && meshIndices.TryGetValue(command, out int index)) {
+                instances[index].Add(mesh);
+                layerBuffers.SetInstances(index, instances[index].Count, meshBuffers.GetChunks(command).Length);
+                layerBuffers.UpdateTransform(index, instances[index].Count - 1, mesh.transform.localToWorldMatrix);
+            }
+            else {
+                meshes.Add((command, false));
+                generator.Schedule(command, mesh.parameters.jobHorizontalSize);
+                if (parameters.instance) {
+                    meshIndices[command] = instances.Count;
+                    instances.Add(new List<VoxelMesh> { mesh });
+                }
+                else instances[0].Add(mesh);
+                layerBuffers.AddMesh();
             }
         }
 

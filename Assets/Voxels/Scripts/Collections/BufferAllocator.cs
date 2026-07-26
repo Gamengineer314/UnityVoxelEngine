@@ -1,6 +1,7 @@
 using System;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
+using Unity.Mathematics;
 
 namespace Voxels.Collections {
 
@@ -10,6 +11,11 @@ namespace Voxels.Collections {
     public struct BufferAllocator : IDisposable {
         private NativeTreeSet<ChunkReference> freeChunks;
         private NativeLinkedList<MemoryChunk> chunks;
+
+        /// <summary>
+        /// Total size of the allocated chunks without the free chunks between them
+        /// </summary>
+        public int compactSize { get; private set; }
 
         /// <summary>
         /// Total size of the allocated chunks and the free chunks between them
@@ -25,6 +31,7 @@ namespace Voxels.Collections {
         public BufferAllocator(AllocatorManager.AllocatorHandle allocator) {
             freeChunks = new(allocator);
             chunks = new(allocator);
+            compactSize = 0;
             int index = chunks.AddLast(new MemoryChunk(0, int.MaxValue, false));
             freeChunks.Add(new ChunkReference(index, int.MaxValue));
         }
@@ -41,6 +48,7 @@ namespace Voxels.Collections {
         /// <param name="size">Size of the chunk</param>
         /// <returns>Index of the chunk</returns>
         public int Allocate(int size) {
+            compactSize += size;
             freeChunks.Ceil(new(size, 0), out ChunkReference freeRef);
             freeChunks.Remove(freeRef);
             MemoryChunk free = chunks[freeRef.index].value;
@@ -68,6 +76,7 @@ namespace Voxels.Collections {
             if (size < node.value.size) {
                 chunks.SetValue(index, new MemoryChunk(node.value.start, size, true));
                 int remaining = node.value.size - size;
+                compactSize -= remaining;
 
                 // Try to increase next free chunk
                 if (node.HasNext) {
@@ -91,14 +100,16 @@ namespace Voxels.Collections {
                 MemoryChunk next = chunks[node.next].value;
                 int increase = size - node.value.size;
                 if (!next.isAllocated && next.size >= increase) {
-                    chunks.SetValue(node.next, new MemoryChunk(next.start, increase, true));
+                    compactSize += increase;
+                    chunks.SetValue(index, new MemoryChunk(node.value.start, size, true));
+                    chunks.Remove(node.next);
                     freeChunks.Remove(new ChunkReference(node.next, next.size));
                     int remaining = next.size - increase;
                     if (remaining > 0) {
-                        int newIndex = chunks.AddAfter(node.next, new MemoryChunk(next.start + increase, remaining, false));
+                        int newIndex = chunks.AddAfter(index, new MemoryChunk(node.value.start + size, remaining, false));
                         freeChunks.Add(new ChunkReference(newIndex, remaining));
                     }
-                    return node.next;
+                    return index;
                 }
             }
 
@@ -116,6 +127,7 @@ namespace Voxels.Collections {
             NativeLinkedList<MemoryChunk>.Node node = chunks[index];
             int start = node.value.start;
             int size = node.value.size;
+            compactSize -= size;
 
             // Try to combine free chunks
             if (node.HasNext) {
@@ -173,23 +185,44 @@ namespace Voxels.Collections {
 
 
         /// <summary>
-        /// Remove free chunks by moving allocated chunks.
-        /// Move the data corresponding to moved chunks in an array.
+        /// Reallocate a memory chunk.
+        /// Move the data corresponding to the chunk in a list.
         /// </summary>
-        /// <typeparam name="T">Type of the items in the array</typeparam>
-        /// <param name="array">The array</param>
-        public unsafe void Compact<T>(NativeArray<T> array) where T : unmanaged {
+        /// <typeparam name="T">Type of the items in the list</typeparam>
+        /// <param name="index">Index of the chunk</param>
+        /// <param name="size">New size of the chunk</param>
+        /// <param name="list">The list</param>
+        /// <returns>Index of the new chunk</returns>
+        public unsafe int Reallocate<T>(int index, int size, NativeList<T> list) where T : unmanaged {
+            MemoryChunk oldChunk = chunks[index].value;
+            int newIndex = Reallocate(index, size);
+            list.Length = TotalSize;
+            if (newIndex != index) {
+                UnsafeUtility.MemMove(list.GetUnsafePtr() + chunks[newIndex].value.start, list.GetUnsafePtr() + oldChunk.start, oldChunk.size * sizeof(T));
+            }
+            return newIndex;
+        } 
+
+
+        /// <summary>
+        /// Remove free chunks by moving allocated chunks.
+        /// Move the data corresponding to moved chunks in a list.
+        /// </summary>
+        /// <typeparam name="T">Type of the items in the list</typeparam>
+        /// <param name="list">The list</param>
+        public unsafe void Compact<T>(NativeList<T> list) where T : unmanaged {
             int start = 0;
             foreach (MemoryChunk chunk in chunks) {
                 if (chunk.isAllocated) {
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
-                    if (start + chunk.size > array.Length)
-                        throw new IndexOutOfRangeException($"Chunk ({chunk.start}, {chunk.size}) is out of range of array of length {array.Length}");
+                    if (start + chunk.size > list.Length)
+                        throw new IndexOutOfRangeException($"Chunk ({chunk.start}, {chunk.size}) is out of range of array of length {list.Length}");
 #endif
-                    UnsafeUtility.MemMove((T*)array.GetUnsafePtr() + start, (T*)array.GetUnsafePtr() + chunk.start, chunk.size);
+                    UnsafeUtility.MemMove(list.GetUnsafePtr() + start, list.GetUnsafePtr() + chunk.start, chunk.size * sizeof(T));
                     start += chunk.size;
                 }
             }
+            list.Length = start;
             Compact();
         }
 

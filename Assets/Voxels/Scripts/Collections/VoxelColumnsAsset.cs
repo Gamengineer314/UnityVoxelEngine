@@ -24,7 +24,7 @@ namespace Voxels.Collections {
         }
 
         private void OnEnable() {
-            if (columns is not null && !voxels.columns.IsCreated) {
+            if (columns != null && !voxels.columns.IsCreated) {
                 voxels = new VoxelColumns(sizeX, sizeZ, offset, new(columns, Allocator.Persistent), new(startIndices, Allocator.Persistent));
             }
         }

@@ -12,6 +12,7 @@ Material:
   m_Parent: {fileID: 0}
   m_ModifiedSerializedProperties: 0
   m_ValidKeywords:
+  - _VOXEL_INSTANCE_ON
   - _VOXEL_TEXTURE_ON
   - _VOXEL_TRANSFORM_ON
   m_InvalidKeywords: []
@@ -78,7 +79,7 @@ Material:
     - _SpecularHighlights: 1
     - _SrcBlend: 1
     - _UVSec: 0
-    - _VOXEL_INSTANCE: 0
+    - _VOXEL_INSTANCE: 1
     - _VOXEL_TEXTURE: 1
     - _VOXEL_TRANSFORM: 1
     - _ZWrite: 1

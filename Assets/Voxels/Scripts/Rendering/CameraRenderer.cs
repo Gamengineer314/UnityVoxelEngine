@@ -28,8 +28,8 @@ namespace Voxels.Rendering {
                     renderer = new LayerRenderer(material, camera, layer, voxelLayer.parameters);
                     renderers[(layer, material)] = renderer;
                 }
-                renderer.SetBuffers(voxelLayer.layerBuffers.chunksBuffer, meshBuffers.facesBuffer, meshBuffers.colorsBuffer, voxelLayer.layerBuffers.transformsBuffer);
-                renderer.Cull(voxelLayer.layerBuffers.chunks.Length);
+                renderer.SetBuffers(voxelLayer.layerBuffers.chunksBuffer, meshBuffers.facesBuffer, meshBuffers.colorsBuffer, voxelLayer.layerBuffers.transformsBuffer, voxelLayer.layerBuffers.renderedTransformsSize);
+                renderer.Cull(voxelLayer.layerBuffers.ChunkCount);
                 renderer.Render();
             }
         }

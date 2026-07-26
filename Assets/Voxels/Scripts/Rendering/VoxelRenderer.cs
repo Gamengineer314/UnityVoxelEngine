@@ -29,6 +29,7 @@ namespace Voxels.Rendering {
         internal GraphicsBuffer indicesBuffer { get; private set; } // All 16 bits indices
         internal GraphicsBuffer counterBuffer { get; private set; } // Buffer to store a counter
         internal MeshBuffers meshBuffers { get; private set; } // Global mesh buffers
+        internal MeshGenerator generator { get; private set; }
         private readonly Dictionary<Camera, CameraRenderer> renderers = new();
 
 
@@ -55,6 +56,7 @@ namespace Voxels.Rendering {
             indicesBuffer.SetData(indices);
             counterBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Raw, 1, sizeof(uint));
             meshBuffers = new MeshBuffers();
+            generator = new MeshGenerator(meshBuffers);
 
             if (cullingShader != null) ShaderID.SetKeywords(cullingShader);
             Camera.onPreCull += Render;
@@ -66,6 +68,7 @@ namespace Voxels.Rendering {
             indicesBuffer.Dispose();
             counterBuffer.Dispose();
             meshBuffers.Dispose();
+            generator.Dispose();
             foreach (CameraRenderer renderer in renderers.Values) renderer.Dispose();
             VoxelLayer.DisposeAll();
             Camera.onPreCull -= Render;

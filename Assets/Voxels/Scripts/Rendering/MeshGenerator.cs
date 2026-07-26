@@ -39,7 +39,7 @@ namespace Voxels.Rendering {
             if (!jobs.TryGetValue(command, out List<(MeshData data, JobHandle handle)> meshJobs)) return;
             foreach ((MeshData data, JobHandle handle) in meshJobs) {
                 handle.Complete();
-                AddData(command, data);
+                buffers.AddData(command, data.chunks, data.faces, data.colors);
                 data.Dispose();
             }
             jobs.Remove(command);
@@ -56,7 +56,7 @@ namespace Voxels.Rendering {
                 if (meshJobs[i].handle.IsCompleted) {
                     meshJobs[i].handle.Complete();
                     MeshData data = meshJobs[i].data;
-                    AddData(command, data);
+                    buffers.AddData(command, data.chunks, data.faces, data.colors);
                     data.Dispose();
                     meshJobs.RemoveAtSwapBack(i);
                 }
@@ -108,35 +108,6 @@ namespace Voxels.Rendering {
                     meshJobs.Add((data, handle));
                 }
             }
-        }
-
-
-        /// <summary>
-        /// Add the result of a job to the layer
-        /// </summary>
-        /// <param name="command">Command that was passed to Schedule</param>
-        /// <param name="data">Job output data</param>
-        private void AddData(GenerationCommand command, MeshData data) {
-            NativeList<VoxelChunk> chunks = buffers.GetChunks(command);
-            int startFace = buffers.faces.Length;
-            int startColor = buffers.colors.Length;
-
-            // Add chunks
-            chunks.Capacity = chunks.Length + data.chunks.Length;
-            foreach (VoxelChunk chunk in data.chunks) {
-                chunks.Add(new VoxelChunk(
-                    chunk.center, chunk.size, chunk.offset.position, chunk.offset.Color + startColor,
-                    chunk.Normal, chunk.StartFace + startFace, chunk.FaceCount, 0, 0, 0
-                ));
-            }
-
-            // Add faces and colors
-            buffers.faces.AddRange(data.faces.AsArray());
-            buffers.colors.AddRange(data.colors.AsArray());
-
-            // Synchronize buffers
-            buffers.SynchronizeFaces(startFace, buffers.faces.Length - startFace);
-            buffers.SynchronizeColors(startColor, buffers.colors.Length - startColor);
         }
 
 
@@ -529,8 +500,8 @@ namespace Voxels.Rendering {
                         int3 faceMax = faceMin;
                         faceMax[VoxelNormals.WidthAxis(normal)] += width;
                         faceMax[VoxelNormals.HeightAxis(normal)] += height;
-                        min = math.select(min, faceMin, faceMin < min);
-                        max = math.select(max, faceMax, faceMax > max);
+                        min = math.min(min, faceMin);
+                        max = math.max(max, faceMax);
                         faceCount++;
                         faceIndex++;
                     }

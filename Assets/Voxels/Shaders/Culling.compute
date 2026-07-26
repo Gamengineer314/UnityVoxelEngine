@@ -70,7 +70,7 @@ bool normalCulling(float3 center, float3 size, uint normalID TRANSFORM_DECL) {
 
 #ifdef VOXEL_INSTANCE
 
-#define GROUP_SIZE
+#define GROUP_SIZE 64
 
 groupshared uint sum[GROUP_SIZE];
 
@@ -92,7 +92,7 @@ void cull(uint3 group : SV_GroupID, uint thread : SV_GroupThreadID) {
         // Prefix sum
         sum[thread.x] = add;
         GroupMemoryBarrierWithGroupSync();
-        for (uint bit = 1; bit < GROUP_SIZE / 2; bit <<= 1) {
+        for (uint bit = 1; bit < GROUP_SIZE; bit <<= 1) {
             if (thread.x & bit) sum[thread.x] += sum[(thread.x & -bit) - 1];
             GroupMemoryBarrierWithGroupSync();
         }
