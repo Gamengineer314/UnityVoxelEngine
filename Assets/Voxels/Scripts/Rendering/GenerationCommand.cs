@@ -1,3 +1,4 @@
+using UnityEngine;
 using Voxels.Collections;
 
 namespace Voxels.Rendering {
@@ -18,6 +19,14 @@ namespace Voxels.Rendering {
             this.mergeNormalsThreshold = mergeNormalsThreshold;
             this.seenFromAbove = seenFromAbove;
             this.textured = textured;
+        }
+
+        public GenerationCommand(VoxelColumns voxels, GenerationParameters parameters, Material material) {
+            this.voxels = voxels;
+            chunkSize = parameters.chunkSize;
+            mergeNormalsThreshold = parameters.mergeNormalsThreshold;
+            seenFromAbove = parameters.seenFromAbove;
+            textured = material.IsKeywordEnabled(ShaderID.shaderTexture);
         }
     }
 

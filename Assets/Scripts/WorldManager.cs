@@ -23,7 +23,7 @@ public class WorldManager : MonoBehaviour {
 
         // Generate mesh
         watch.Restart();
-        terrain.SetVoxels(voxels, Vector3.zero);
+        terrain.Voxels = voxels;
         terrain.CompleteGeneration();
         
         Debug.Log($"Mesh generated in {watch.ElapsedMilliseconds} ms");

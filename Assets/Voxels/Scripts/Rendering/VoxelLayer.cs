@@ -12,10 +12,9 @@ namespace Voxels.Rendering {
         public readonly ShaderParameters parameters;
         public readonly LayerBuffers layerBuffers;
         private readonly MeshBuffers meshBuffers;
-        private readonly MeshGenerator generator;
 
-        private readonly List<(GenerationCommand command, bool generated)> meshes = new();
-        private readonly List<List<VoxelMesh>> instances = new();
+        private readonly List<GenerationCommand> meshes = new();
+        private readonly List<List<Transform>> instances = new();
         private readonly Dictionary<GenerationCommand, int> meshIndices = new();
         
         private static readonly Dictionary<Material, VoxelLayer[]> layers = new();
@@ -25,8 +24,7 @@ namespace Voxels.Rendering {
             this.parameters = parameters;
             layerBuffers = new LayerBuffers(parameters);
             meshBuffers = VoxelRenderer.Instance.meshBuffers;
-            generator = VoxelRenderer.Instance.generator;
-            if (!parameters.instance) instances.Add(new List<VoxelMesh>());
+            if (!parameters.instance) instances.Add(new List<Transform>());
         }
 
         public void Dispose() {
@@ -101,21 +99,11 @@ namespace Voxels.Rendering {
         /// Update generation and transform of the objects in this layer
         /// </summary>
         public void Update() {
-            // Add chunks for completed meshes
-            for (int i = 0; i < meshes.Count; i++) {
-                if (!meshes[i].generated && generator.CompleteCompleted(meshes[i].command)) {
-                    meshes[i] = (meshes[i].command, true);
-                    NativeList<VoxelChunk> chunks = meshBuffers.GetChunks(meshes[i].command);
-                    if (parameters.instance) layerBuffers.SetInstances(i, instances[i].Count, chunks.Length);
-                    layerBuffers.AddChunks(i, chunks, parameters.instance ? instances[i].Count : 0);
-                }
-            }
-
             // Update transforms
             if (parameters.transform) {
                 for (int i = 0; i < instances.Count; i++) {
                     for (int j = 0; j < instances[i].Count; j++) {
-                        layerBuffers.UpdateTransform(i, j, instances[i][j].transform.localToWorldMatrix);
+                        layerBuffers.UpdateTransform(i, j, instances[i][j].localToWorldMatrix);
                     }
                 }
             }
@@ -125,37 +113,25 @@ namespace Voxels.Rendering {
         /// <summary>
         /// Add an instance of a mesh to this layer
         /// </summary>
-        /// <param name="mesh">The mesh</param>
-        public void AddObject(VoxelMesh mesh) {
-            GenerationCommand command = GetCommand(mesh);
+        /// <param name="command">Generation command of the mesh</param>
+        /// <param name="transform">Transform of the instance</param>
+        public void AddObject(GenerationCommand command, Transform transform) {
             if (parameters.instance && meshIndices.TryGetValue(command, out int index)) {
-                instances[index].Add(mesh);
+                instances[index].Add(transform);
                 layerBuffers.SetInstances(index, instances[index].Count, meshBuffers.GetChunks(command).Length);
-                layerBuffers.UpdateTransform(index, instances[index].Count - 1, mesh.transform.localToWorldMatrix);
+                layerBuffers.UpdateTransform(index, instances[index].Count - 1, transform.localToWorldMatrix);
             }
             else {
-                meshes.Add((command, false));
-                generator.Schedule(command, mesh.parameters.jobHorizontalSize);
+                meshes.Add(command);
+                layerBuffers.AddMesh(meshBuffers.GetChunks(command));
                 if (parameters.instance) {
+                    layerBuffers.UpdateTransform(instances.Count, 0, transform.localToWorldMatrix);
                     meshIndices[command] = instances.Count;
-                    instances.Add(new List<VoxelMesh> { mesh });
+                    instances.Add(new List<Transform> { transform });
                 }
-                else instances[0].Add(mesh);
-                layerBuffers.AddMesh();
+                else instances[0].Add(transform);
             }
         }
-
-
-        /// <summary>
-        /// Complete generation of a mesh
-        /// <param name="mesh">The mesh</param>
-        /// </summary>
-        public void CompleteGeneration(VoxelMesh mesh)
-            => generator.Complete(GetCommand(mesh));
-
-
-        private GenerationCommand GetCommand(VoxelMesh mesh)
-            => new(mesh.voxels, mesh.parameters.chunkSize, mesh.parameters.mergeNormalsThreshold, mesh.parameters.seenFromAbove, parameters.texture);
     }
 
 }

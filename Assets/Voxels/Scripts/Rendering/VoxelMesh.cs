@@ -9,38 +9,31 @@ namespace Voxels.Rendering {
         [SerializeField] internal VoxelColumnsAsset voxelsAsset;
         [SerializeField] internal GenerationParameters parameters;
         [SerializeField] internal Material material;
-        [SerializeField] internal Vector3 offset;
-        internal VoxelColumns voxels;
+        private GenerationCommand command;
 
-        internal void Start() {
-            if (voxelsAsset) {
-                voxels = voxelsAsset.voxels;
-                AddToLayer();
+        public VoxelColumns Voxels {
+            set {
+                command = new GenerationCommand(value, parameters, material);
+                VoxelRenderer.Instance.generator.Schedule(command, parameters.jobHorizontalSize, AddToLayer);
             }
         }
 
-        /// <summary>
-        /// Set the voxels of this object.
-        /// The voxels won't be disposed when this object is destroyed.
-        /// </summary>
-        /// <param name="voxels">The voxels</param>
-        /// <param name="offset">Offset to add to the positions</param>
-        public void SetVoxels(VoxelColumns voxels, Vector3 offset) {
-            if (this.voxels.IsCreated) throw new InvalidOperationException("VoxelMesh voxels can only be set once");
-            this.voxels = voxels;
-            this.offset = offset;
-            AddToLayer();
+        internal void Start() {
+            if (voxelsAsset) {
+                command = new GenerationCommand(voxelsAsset.voxels, parameters, material);
+                VoxelRenderer.Instance.generator.Schedule(command, parameters.jobHorizontalSize, AddToLayer);
+            }
         }
 
         /// <summary>
         /// Add this object to its layer
         /// </summary>
-        private void AddToLayer() => VoxelLayer.GetLayer(gameObject.layer, material).AddObject(this);
+        private void AddToLayer() => VoxelLayer.GetLayer(gameObject.layer, material).AddObject(command, transform);
 
         /// <summary>
         /// Complete the generation of this object's mesh
         /// </summary>
-        public void CompleteGeneration() => VoxelLayer.GetLayer(gameObject.layer, material).CompleteGeneration(this);
+        public void CompleteGeneration() => VoxelRenderer.Instance.generator.Complete(command);
     }
 
 }

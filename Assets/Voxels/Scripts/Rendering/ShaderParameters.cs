@@ -15,8 +15,8 @@ namespace Voxels.Rendering {
         /// <param name="material">The material</param>
         public ShaderParameters(Material material) {
             texture = material.IsKeywordEnabled(ShaderID.shaderTexture);
-            transform = material.IsKeywordEnabled(ShaderID.shaderTransform);
-            instance = material.IsKeywordEnabled(ShaderID.shaderInstance);
+            transform = material.IsKeywordEnabled(ShaderID.shaderTexture);
+            instance = material.IsKeywordEnabled(ShaderID.shaderTexture);
         }
     }
 }

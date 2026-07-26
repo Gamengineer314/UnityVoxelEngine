@@ -58,45 +58,36 @@ namespace Voxels.Rendering {
 
 
         /// <summary>
-        /// Add an empty mesh
+        /// Add a mesh
+        /// <param name="chunks">Chunks of the mesh</param>
         /// </summary>
-        public void AddMesh() {
-            arrays.firstChunks.Add(-1);
-            if (arrays.allocatorIndices.IsCreated) {
-                int index = arrays.transformsAllocator.Allocate(1);
-                arrays.transforms.Length = arrays.transformsAllocator.TotalSize;
-                arrays.allocatorIndices.Add(new int2(index, arrays.renderedTransformsAllocator.Allocate(0)));
-            }
-            else if (arrays.transforms.IsCreated) arrays.transforms.Length++;
-        }
-
-        /// <summary>
-        /// Add the chunks of a mesh
-        /// </summary>
-        /// <param name="meshIndex">Index of the mesh</param>
-        /// <param name="newChunks">The chunks</param>
-        /// <param name="instanceCount">Number of instances of the mesh</param>
-        public void AddChunks(int meshIndex, NativeList<VoxelChunk> newChunks, int instanceCount) {
+        public void AddMesh(NativeList<VoxelChunk> chunks) {
             int startInstance, startRenderedInstance;
             if (arrays.allocatorIndices.IsCreated) {
-                int2 indices = arrays.allocatorIndices[meshIndex];
+                int2 indices;
+                indices.x = arrays.transformsAllocator.Allocate(1);
+                arrays.transforms.Length = arrays.transformsAllocator.TotalSize;
+                indices.y = arrays.renderedTransformsAllocator.Allocate(chunks.Length);
+                arrays.allocatorIndices.Add(indices);
                 startInstance = arrays.transformsAllocator[indices.x].start;
                 startRenderedInstance = arrays.renderedTransformsAllocator[indices.y].start;
             }
             else {
-                startInstance = meshIndex;
+                if (arrays.transforms.IsCreated) arrays.transforms.Length++;
+                startInstance = arrays.firstChunks.Length;
                 startRenderedInstance = 0;
             }
 
+            // Add chunks
             int startChunk = arrays.chunks.Length;
-            arrays.firstChunks[meshIndex] = startChunk;
-            foreach (VoxelChunk chunk in newChunks) {
+            arrays.firstChunks.Add(startChunk);
+            foreach (VoxelChunk chunk in chunks) {
                 arrays.chunks.Add(new VoxelChunk(
                     chunk.center, chunk.size, chunk.offset.position, chunk.offset.Color,
-                    chunk.Normal, chunk.StartFace, chunk.FaceCount, startInstance, startRenderedInstance, instanceCount
+                    chunk.Normal, chunk.StartFace, chunk.FaceCount, startInstance, startRenderedInstance, 1
                 ));
                 arrays.chunkLinks.Add(new int2(arrays.chunks.Length - 2, arrays.chunks.Length));
-                startRenderedInstance += instanceCount;
+                startRenderedInstance++;
             }
             arrays.chunkLinks[startChunk] = new int2(-1, arrays.chunkLinks[startChunk].y);
             arrays.chunkLinks[^1] = new int2(arrays.chunkLinks[^1].x, -1);

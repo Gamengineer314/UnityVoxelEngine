@@ -16,10 +16,10 @@ namespace Voxels.Rendering {
     /// </summary>
     internal class MeshGenerator {
         private readonly MeshBuffers buffers;
-        private readonly Dictionary<GenerationCommand, List<(MeshData data, JobHandle handle)>> jobs = new();
+        private readonly Dictionary<GenerationCommand, (List<(MeshData data, JobHandle handle)> jobs, List<Action> onComplete)> generations = new();
 
-        public int JobCount => jobs.Sum(kv => kv.Value.Count);
-        public int CompletedCount => jobs.Sum(kv => kv.Value.Count(j => j.handle.IsCompleted));
+        public int JobCount => generations.Sum(kv => kv.Value.jobs.Count);
+        public int CompletedCount => generations.Sum(kv => kv.Value.jobs.Count(j => j.handle.IsCompleted));
 
 
         /// <summary>
@@ -29,6 +29,16 @@ namespace Voxels.Rendering {
         public MeshGenerator(MeshBuffers buffers) {
             this.buffers = buffers;
         }
+
+        public void Dispose() {
+            foreach (var generation in generations.Values) {
+                foreach ((MeshData data, JobHandle handle) in generation.jobs) {
+                    handle.Complete();
+                    data.Dispose();
+                }
+            }
+            generations.Clear();
+        }
         
 
         /// <summary>
@@ -36,49 +46,44 @@ namespace Voxels.Rendering {
         /// </summary>
         /// <param name="command">Command that was passed to Schedule</param>
         public void Complete(GenerationCommand command) {
-            if (!jobs.TryGetValue(command, out List<(MeshData data, JobHandle handle)> meshJobs)) return;
-            foreach ((MeshData data, JobHandle handle) in meshJobs) {
+            if (!generations.TryGetValue(command, out var generation)) return;
+            foreach ((MeshData data, JobHandle handle) in generation.jobs) {
                 handle.Complete();
                 buffers.AddData(command, data.chunks, data.faces, data.colors);
                 data.Dispose();
             }
-            jobs.Remove(command);
+            generations.Remove(command);
+            foreach (Action action in generation.onComplete) {
+                action.Invoke();
+            }
         }
 
-        /// <summary>
-        /// Complete the generation jobs of a mesh that are completed and add their results
-        /// </summary>
-        /// <param name="command">Command that was passed to Schedule</param>
-        /// <returns>Whether all remaining jobs for that mesh were completed</returns>
-        public bool CompleteCompleted(GenerationCommand command) {
-            if (!jobs.TryGetValue(command, out List<(MeshData data, JobHandle handle)> meshJobs)) return true;
-            for (int i = 0; i < meshJobs.Count; i++) {
-                if (meshJobs[i].handle.IsCompleted) {
-                    meshJobs[i].handle.Complete();
-                    MeshData data = meshJobs[i].data;
-                    buffers.AddData(command, data.chunks, data.faces, data.colors);
-                    data.Dispose();
-                    meshJobs.RemoveAtSwapBack(i);
-                }
-            }
-            if (meshJobs.Count == 0) {
-                jobs.Remove(command);
-                return true;
-            }
-            return false;
-        }
 
         /// <summary>
-        /// Complete all generation jobs without adding their results
+        /// Complete the generation jobs that are completed and add their results
         /// </summary>
-        public void Dispose() {
-            foreach (List<(MeshData, JobHandle)> meshJobs in jobs.Values) {
-                foreach ((MeshData data, JobHandle handle) in meshJobs) {
-                    handle.Complete();
-                    data.Dispose();
+        public void Update() {
+            List<GenerationCommand> completed = new();
+            foreach (var generation in generations) {
+                GenerationCommand command = generation.Key;
+                List<(MeshData data, JobHandle handle)> jobs = generation.Value.jobs;
+                for (int i = 0; i < jobs.Count; i++) {
+                    if (jobs[i].handle.IsCompleted) {
+                        jobs[i].handle.Complete();
+                        MeshData data = jobs[i].data;
+                        buffers.AddData(command, data.chunks, data.faces, data.colors);
+                        data.Dispose();
+                        jobs.RemoveAtSwapBack(i);
+                    }
                 }
+                if (jobs.Count == 0) completed.Add(command);
             }
-            jobs.Clear();
+            foreach (GenerationCommand command in completed) {
+                foreach (Action action in generations[command].onComplete) {
+                    action.Invoke();
+                }
+                generations.Remove(command);
+            }
         }
 
 
@@ -87,13 +92,22 @@ namespace Voxels.Rendering {
         /// </summary>
         /// <param name="command">Generation command</param>
         /// <param name="jobHorizontalSize">Max horizontal size a generator job can process</param>
-        public void Schedule(GenerationCommand command, int jobHorizontalSize) {
-            if (buffers.ContainsCommand(command) || jobs.ContainsKey(command)) return;
+        /// <param name="onComplete">Callback called when the generation completes</param>
+        public void Schedule(GenerationCommand command, int jobHorizontalSize, Action onComplete = null) {
             if (command.chunkSize <= 0 || command.chunkSize > VoxelFace.maxSize)
                 throw new ArgumentException($"Chunk size must be positive and can't exceed {VoxelFace.maxSize}", nameof(command.chunkSize));
+
+            if (buffers.ContainsCommand(command)) {
+                onComplete?.Invoke();
+                return;
+            }
+            if (generations.TryGetValue(command, out var generation)) {
+                if (onComplete != null) generation.onComplete.Add(onComplete);
+                return;
+            }
             
-            List<(MeshData data, JobHandle handle)> meshJobs = new();
-            jobs[command] = meshJobs;
+            List<(MeshData data, JobHandle handle)> jobs = new();
+            generations[command] = (jobs, onComplete == null ? new List<Action>() : new List<Action> { onComplete });
             int nJobsX = (int)math.ceil((float)command.voxels.sizeX / jobHorizontalSize);
             int nJobsZ = (int)math.ceil((float)command.voxels.sizeZ / jobHorizontalSize);
             for (int jobZ = 0, i = 0; jobZ < nJobsZ; jobZ++) {
@@ -105,7 +119,7 @@ namespace Voxels.Rendering {
                     MeshData data = new(true);
                     GeneratorJob job = new(command.voxels, jobStartX, jobStartZ, jobSizeX, jobSizeZ, command.chunkSize, command.mergeNormalsThreshold, command.seenFromAbove, command.textured, data);
                     JobHandle handle = job.Schedule();
-                    meshJobs.Add((data, handle));
+                    jobs.Add((data, handle));
                 }
             }
         }
