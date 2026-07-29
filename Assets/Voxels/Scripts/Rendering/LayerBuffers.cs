@@ -2,7 +2,6 @@ using UnityEngine;
 using Unity.Collections;
 using Unity.Mathematics;
 using Voxels.Collections;
-using System;
 using Unity.Burst;
 
 namespace Voxels.Rendering {
@@ -29,6 +28,7 @@ namespace Voxels.Rendering {
         private Arrays arrays;
 
         public int ChunkCount => arrays.chunks.Length;
+        public bool IsCreated => arrays.chunks.IsCreated;
 
 
         public unsafe LayerBuffers(ShaderParameters parameters) {
@@ -59,9 +59,12 @@ namespace Voxels.Rendering {
 
         /// <summary>
         /// Add a mesh
-        /// <param name="chunks">Chunks of the mesh</param>
+        /// <param name="buffers">Buffers that contain the mesh</param>
+        /// <param name="command">Generation command for the mesh</param>
         /// </summary>
-        public void AddMesh(NativeList<VoxelChunk> chunks) {
+        public void AddMesh(MeshBuffers buffers, GenerationCommand command) {
+            // Allocate transforms
+            NativeList<VoxelChunk> chunks = buffers.GetChunks(command);
             int startInstance, startRenderedInstance;
             if (arrays.allocatorIndices.IsCreated) {
                 int2 indices;
@@ -71,27 +74,79 @@ namespace Voxels.Rendering {
                 arrays.allocatorIndices.Add(indices);
                 startInstance = arrays.transformsAllocator[indices.x].start;
                 startRenderedInstance = arrays.renderedTransformsAllocator[indices.y].start;
+                if (BufferUtility.MustGrow(renderedTransformsSize, arrays.renderedTransformsAllocator.TotalSize)) ResizeRenderedTransforms();
             }
             else {
                 if (arrays.transforms.IsCreated) arrays.transforms.Length++;
                 startInstance = arrays.firstChunks.Length;
                 startRenderedInstance = 0;
             }
+            if (arrays.transforms.IsCreated && BufferUtility.MustGrow(transformsBuffer.count, arrays.transforms.Length)) ResizeTransforms();
 
             // Add chunks
             int startChunk = arrays.chunks.Length;
-            arrays.firstChunks.Add(startChunk);
             foreach (VoxelChunk chunk in chunks) {
-                arrays.chunks.Add(new VoxelChunk(
-                    chunk.center, chunk.size, chunk.offset.position, chunk.offset.Color,
-                    chunk.Normal, chunk.StartFace, chunk.FaceCount, startInstance, startRenderedInstance, 1
-                ));
+                arrays.chunks.Add(buffers.GetChunk(chunk, startInstance, startRenderedInstance, 1));
                 arrays.chunkLinks.Add(new int2(arrays.chunks.Length - 2, arrays.chunks.Length));
                 startRenderedInstance++;
             }
-            arrays.chunkLinks[startChunk] = new int2(-1, arrays.chunkLinks[startChunk].y);
+            arrays.chunkLinks[startChunk] = new int2(-arrays.firstChunks.Length, arrays.chunkLinks[startChunk].y);
             arrays.chunkLinks[^1] = new int2(arrays.chunkLinks[^1].x, -1);
-            SynchronizeChunks(startChunk, arrays.chunks.Length - startChunk);
+            arrays.firstChunks.Add(startChunk);
+            if (BufferUtility.MustGrow(chunksBuffer.count, arrays.chunks.Length)) ResizeChunks();
+            else chunksBuffer.SetData(arrays.chunks.AsArray(), startChunk, startChunk, arrays.chunks.Length - startChunk);
+        }
+
+
+        /// <summary>
+        /// Remove a mesh
+        /// </summary>
+        /// <param name="index">Index of the mesh</param>
+        public void RemoveMesh(int index) {
+            if (arrays.allocatorIndices.IsCreated) {
+                int2 indices = arrays.allocatorIndices[index];
+                arrays.transformsAllocator.Free(indices.x);
+                arrays.transforms.Length = arrays.transformsAllocator.TotalSize;
+                arrays.renderedTransformsAllocator.Free(indices.y);
+                arrays.allocatorIndices.RemoveAtSwapBack(index);
+            }
+            else if (arrays.transforms.IsCreated) arrays.transforms.RemoveAtSwapBack(index);
+
+            // Remove chunks
+            int i = arrays.firstChunks[index];
+            while (i != -1) {
+                int next = arrays.chunkLinks[i].y;
+                arrays.chunks.RemoveAtSwapBack(i);
+                arrays.chunkLinks.RemoveAtSwapBack(i);
+                if (arrays.chunkLinks.Length == next) next = i; // Swapped chunk was next
+                else if (i != arrays.chunkLinks.Length) { // Update swapped chunk
+                    int prev = arrays.chunkLinks[i].x;
+                    if (prev < 0) arrays.firstChunks[-prev] = i;
+                    else arrays.chunkLinks[prev] = new int2(arrays.chunkLinks[prev].x, i);
+                    chunksBuffer.SetData(arrays.chunks.AsArray(), i, i, 1);
+                }
+                i = next;
+            }
+            arrays.firstChunks.RemoveAtSwapBack(index);
+
+            if (BufferUtility.MustShrink(chunksBuffer.count, arrays.chunks.Length)) ResizeChunks();
+            if (arrays.transforms.IsCreated && BufferUtility.MustShrink(transformsBuffer.count, arrays.transformsAllocator.compactSize)) ResizeTransforms();
+            if (arrays.allocatorIndices.IsCreated && BufferUtility.MustShrink(renderedTransformsSize, arrays.renderedTransformsAllocator.compactSize)) ResizeRenderedTransforms();
+        }
+
+
+        /// <summary>
+        /// Update the chunks of a mesh without synchronizing the chunks buffer
+        /// </summary>
+        /// <param name="buffers">Buffers that contain the mesh</param>
+        /// <param name="command">Generation command for the mesh</param>
+        /// <param name="index">Index of the mesh</param>
+        public void UpdateChunks(MeshBuffers buffers, GenerationCommand command, int index) {
+            NativeList<VoxelChunk> chunks = buffers.GetChunks(command);
+            for (int i = 0, j = arrays.firstChunks[index]; j != -1; i++, j = arrays.chunkLinks[j].y) {
+                VoxelChunk chunk = arrays.chunks[j];
+                arrays.chunks[j] = buffers.GetChunk(chunks[i], chunk.StartInstance, chunk.StartRenderedInstance, chunk.InstanceCount);
+            }
         }
 
 
@@ -106,24 +161,31 @@ namespace Voxels.Rendering {
             
             // Reallocate transforms
             int chunkSize = arrays.transformsAllocator[indices.x].size;
-            if (chunkSize < instanceCount) {
+            if (instanceCount > chunkSize) {
                 int newIndex = arrays.transformsAllocator.Reallocate(indices.x, chunkSize * 2, arrays.transforms);
-                if (newIndex != indices.x) SynchronizeTransforms(arrays.transformsAllocator[indices.x].start, chunkSize);
+                if (BufferUtility.MustGrow(transformsBuffer.count, arrays.transforms.Length)) ResizeTransforms();
+                else if (newIndex != indices.x) {
+                    int start = arrays.transformsAllocator[indices.x].start;
+                    transformsBuffer.SetData(arrays.transforms.AsArray(), start, start, chunkSize);
+                }
                 indices.x = newIndex;
             }
             else if (chunkSize > instanceCount * 4) {
                 arrays.transformsAllocator.Reallocate(indices.x, chunkSize / 2, arrays.transforms);
             }
+            if (BufferUtility.MustShrink(transformsBuffer.count, arrays.transformsAllocator.compactSize)) ResizeTransforms();
 
             // Reallocate rendered transforms
             chunkSize = arrays.transformsAllocator[indices.y].size;
-            if (chunkSize < instanceCount * chunkCount) {
+            int newSize = instanceCount * chunkCount;
+            if (newSize > chunkSize) {
                 indices.y = arrays.renderedTransformsAllocator.Reallocate(indices.y, chunkSize * 2);
-                SynchronizeRenderedTransforms();
+                if (BufferUtility.MustGrow(renderedTransformsSize, arrays.renderedTransformsAllocator.TotalSize)) ResizeRenderedTransforms();
             }
-            else if (chunkSize > instanceCount * chunkCount * 4) {
-                arrays.renderedTransformsAllocator.Reallocate(indices.y, chunkSize / 2);
+            else if (chunkSize > newSize * 4) {
+                arrays.renderedTransformsAllocator.Reallocate(indices.y, newSize / 2);
             }
+            if (BufferUtility.MustShrink(renderedTransformsSize, arrays.renderedTransformsAllocator.compactSize)) ResizeRenderedTransforms();
 
             arrays.allocatorIndices[meshIndex] = indices;
 
@@ -137,7 +199,7 @@ namespace Voxels.Rendering {
                     chunk.Normal, chunk.StartFace, chunk.FaceCount, startInstance, startRenderedInstance, instanceCount
                 );
                 startRenderedInstance += instanceCount;
-                SynchronizeChunks(i, 1);
+                chunksBuffer.SetData(arrays.chunks.AsArray(), i, i, 1);
             }
         }
 
@@ -153,60 +215,44 @@ namespace Voxels.Rendering {
             if (arrays.allocatorIndices.IsCreated) index += arrays.transformsAllocator[arrays.allocatorIndices[meshIndex].x].start;
             if (arrays.transforms[index] != transform) {
                 arrays.transforms[index] = transform;
-                SynchronizeTransforms(index, 1);
+                transformsBuffer.SetData(arrays.transforms.AsArray(), index, index, 1);
             }
         }
 
 
         /// <summary>
-        /// Synchronize a range of the chunks buffer with the array
+        /// Synchronize the chunks buffer with its array
         /// </summary>
-        /// <param name="start">Start of the range</param>
-        /// <param name="count">Number of items in the range</param>
-        private void SynchronizeChunks(int start, int count) {
-            if (BufferUtility.MustResize(chunksBuffer.count, arrays.chunks.Length)) {
-                BufferUtility.Resize(ref chunksBuffer, arrays.chunks.AsArray());
-                Debug.Log($"[Voxels] Chunks length = {arrays.chunks.Length}, buffer resized to {chunksBuffer.count}");
-            }
-            else chunksBuffer.SetData(arrays.chunks.AsArray(), start, start, count);
+        public void SynchronizeChunks() => chunksBuffer.SetData(arrays.chunks.AsArray(), 0, 0, arrays.chunks.Length);
+        
+        private void ResizeChunks() {
+            BufferUtility.Resize(ref chunksBuffer, arrays.chunks.AsArray());
+            Debug.Log($"[Voxels] Chunks length = {arrays.chunks.Length}, buffer resized to {chunksBuffer.count}");
         }
 
-
-        /// <summary>
-        /// Synchronize a range of the transforms buffer with the array
-        /// </summary>
-        /// <param name="start">Start of the range</param>
-        /// <param name="count">Number of items in the range</param>
-        private void SynchronizeTransforms(int start, int count) {
-            int length = arrays.transforms.Length;
-            if (arrays.allocatorIndices.IsCreated && (BufferUtility.MustResize(transformsBuffer.count, length) || BufferUtility.MustResize(transformsBuffer.count, arrays.transformsAllocator.compactSize))) {
+        private void ResizeTransforms() {
+            if (arrays.allocatorIndices.IsCreated) {
+                int length = arrays.transforms.Length;
                 CompactTransforms(ref arrays);
-                if (BufferUtility.MustResize(transformsBuffer.count, arrays.transforms.Length)) {
+                if (BufferUtility.MustGrow(transformsBuffer.count, arrays.transforms.Length) || BufferUtility.MustShrink(transformsBuffer.count, arrays.transforms.Length)) {
                     BufferUtility.Resize(ref transformsBuffer, arrays.transforms.AsArray());   
                 }
                 else transformsBuffer.SetData(arrays.transforms.AsArray(), 0, 0, arrays.transforms.Length);
                 Debug.Log($"[Voxels] Transforms length = {length}, compacted to {arrays.transforms.Length}, buffer resized to {transformsBuffer.count}");
-                SynchronizeChunks(0, arrays.chunks.Length);
+                SynchronizeChunks();
             }
-            else if (BufferUtility.MustResize(transformsBuffer.count, arrays.transforms.Length)) {
+            else {
                 BufferUtility.Resize(ref transformsBuffer, arrays.transforms.AsArray());
                 Debug.Log($"[Voxels] Transforms length = {arrays.transforms.Length}, buffer resized to {transformsBuffer.count}");
             }
-            else transformsBuffer.SetData(arrays.transforms.AsArray(), start, start, count);
         }
 
-
-        /// <summary>
-        /// Update the rendered transforms buffer size if necessary
-        /// </summary>
-        private void SynchronizeRenderedTransforms() {
+        private void ResizeRenderedTransforms() {
             int length = arrays.renderedTransformsAllocator.TotalSize;
-            if (BufferUtility.MustResize(renderedTransformsSize, length)) {
-                CompactRenderedTransforms(ref arrays);
-                renderedTransformsSize = BufferUtility.UpdateSize(renderedTransformsSize, arrays.renderedTransformsAllocator.TotalSize);
-                Debug.Log($"[Voxels] Rendered transforms length = {length}, compacted to {arrays.renderedTransformsAllocator.TotalSize}, buffer resized to {renderedTransformsSize}");
-                SynchronizeChunks(0, arrays.chunks.Length);
-            }
+            CompactRenderedTransforms(ref arrays);
+            renderedTransformsSize = BufferUtility.UpdateSize(arrays.renderedTransformsAllocator.TotalSize);
+            Debug.Log($"[Voxels] Rendered transforms length = {length}, compacted to {arrays.renderedTransformsAllocator.TotalSize}, buffer resized to {renderedTransformsSize}");
+            SynchronizeChunks();
         }
 
 

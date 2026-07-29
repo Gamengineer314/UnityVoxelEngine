@@ -1,6 +1,7 @@
 using UnityEngine;
 using Unity.Collections;
 using Unity.Mathematics;
+using Unity.Collections.LowLevel.Unsafe;
 
 namespace Voxels.Collections {
     
@@ -16,25 +17,24 @@ namespace Voxels.Collections {
         public VoxelColumns voxels { get; private set; }
 
         internal void Init(VoxelColumns voxels) {
-            this.voxels = voxels;
             sizeX = voxels.sizeX;
             sizeZ = voxels.sizeZ;
+            offset = voxels.offset;
             columns = voxels.columns.ToArray();
             startIndices = voxels.startIndices.ToArray();
         }
 
         private void OnEnable() {
-            if (columns != null && !voxels.columns.IsCreated) {
+            if (columns != null) {
                 voxels = new VoxelColumns(sizeX, sizeZ, offset, new(columns, Allocator.Persistent), new(startIndices, Allocator.Persistent));
+#if UNITY_EDITOR
+                Editor.EditorDisposer.disposables.Add(voxels); // Dispose on domain reload because OnDisable isn't always called in the editor
+#endif
             }
         }
 
+#if !UNITY_EDITOR
         private void OnDisable() {
-            voxels.Dispose();
-        }
-
-#if UNITY_EDITOR
-        ~VoxelColumnsAsset() { // Dispose in destructor for the cases where OnDisable isn't called in the editor
             voxels.Dispose();
         }
 #endif

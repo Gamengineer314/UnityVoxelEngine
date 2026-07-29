@@ -1,6 +1,5 @@
 using System.Collections.Generic;
 using Unity.Collections;
-using Unity.Mathematics;
 using UnityEngine;
 
 namespace Voxels.Rendering {
@@ -9,26 +8,30 @@ namespace Voxels.Rendering {
     /// Rendering layer that contains all meshes in a layer with a material
     /// </summary>
     internal class VoxelLayer {
+        public readonly int layer;
         public readonly ShaderParameters parameters;
         public readonly LayerBuffers layerBuffers;
         private readonly MeshBuffers meshBuffers;
 
-        private readonly List<GenerationCommand> meshes = new();
-        private readonly List<List<Transform>> instances = new();
+        private readonly List<List<VoxelMesh>> instances = new();
+        private readonly Dictionary<VoxelMesh, int> instanceIndices = new();
         private readonly Dictionary<GenerationCommand, int> meshIndices = new();
         
         private static readonly Dictionary<Material, VoxelLayer[]> layers = new();
 
 
-        public VoxelLayer(ShaderParameters parameters) {
+        public VoxelLayer(int layer, ShaderParameters parameters) {
+            this.layer = layer;
             this.parameters = parameters;
             layerBuffers = new LayerBuffers(parameters);
             meshBuffers = VoxelRenderer.Instance.meshBuffers;
-            if (!parameters.instance) instances.Add(new List<Transform>());
+            if (!parameters.instance) instances.Add(new List<VoxelMesh>());
+            meshBuffers.bufferCompacted += UpdateChunks;
         }
 
         public void Dispose() {
             layerBuffers.Dispose();
+            meshBuffers.bufferCompacted -= UpdateChunks;
         }
 
 
@@ -46,7 +49,7 @@ namespace Voxels.Rendering {
             }
             if (materialLayers[layer] == null) {
                 ShaderParameters parameters = new(material);
-                materialLayers[layer] = new VoxelLayer(parameters);
+                materialLayers[layer] = new VoxelLayer(layer, parameters);
             }
             return materialLayers[layer];
         }
@@ -96,15 +99,19 @@ namespace Voxels.Rendering {
 
 
         /// <summary>
-        /// Update generation and transform of the objects in this layer
+        /// Update layer and transform of the objects in this layer
         /// </summary>
         public void Update() {
-            // Update transforms
-            if (parameters.transform) {
-                for (int i = 0; i < instances.Count; i++) {
-                    for (int j = 0; j < instances[i].Count; j++) {
-                        layerBuffers.UpdateTransform(i, j, instances[i][j].localToWorldMatrix);
+            for (int i = instances.Count - 1; i >= 0; i--) {
+                List<VoxelMesh> meshInstances = instances[i];
+                for (int j = meshInstances.Count - 1; j >= 0; j--) {
+                    VoxelMesh instance = meshInstances[j];
+                    if (instance.gameObject.layer != layer) {
+                        RemoveInstance(instance);
+                        instance.layer = GetLayer(instance.gameObject.layer, instance.material);
+                        instance.layer.AddInstance(instance);
                     }
+                    else if (parameters.transform) layerBuffers.UpdateTransform(i, j, instance.transform.localToWorldMatrix);
                 }
             }
         }
@@ -113,24 +120,73 @@ namespace Voxels.Rendering {
         /// <summary>
         /// Add an instance of a mesh to this layer
         /// </summary>
-        /// <param name="command">Generation command of the mesh</param>
-        /// <param name="transform">Transform of the instance</param>
-        public void AddObject(GenerationCommand command, Transform transform) {
-            if (parameters.instance && meshIndices.TryGetValue(command, out int index)) {
-                instances[index].Add(transform);
-                layerBuffers.SetInstances(index, instances[index].Count, meshBuffers.GetChunks(command).Length);
-                layerBuffers.UpdateTransform(index, instances[index].Count - 1, transform.localToWorldMatrix);
+        /// <param name="instance">The instance</param>
+        public void AddInstance(VoxelMesh instance) {
+            int instanceIndex;
+            if (parameters.instance && meshIndices.TryGetValue(instance.command, out int meshIndex)) { // Add instance to existing mesh
+                instanceIndex = instances[meshIndex].Count;
+                layerBuffers.SetInstances(meshIndex, instances[meshIndex].Count + 1, meshBuffers.GetChunks(instance.command).Length);
+            }
+            else { // Add mesh with 1 instance
+                layerBuffers.AddMesh(meshBuffers, instance.command);
+                if (parameters.instance) {
+                    meshIndex = instances.Count;
+                    instanceIndex = 0;
+                    meshIndices[instance.command] = meshIndex;
+                    instances.Add(new List<VoxelMesh>());
+                }
+                else {
+                    meshIndex = 0;
+                    instanceIndex = instances[0].Count;
+                }
+            }
+            instanceIndices[instance] = instanceIndex;
+            instances[meshIndex].Add(instance);
+            if (parameters.transform) layerBuffers.UpdateTransform(meshIndex, instanceIndex, instance.transform.localToWorldMatrix);
+        }
+
+
+        /// <summary>
+        /// Remove an instance of a mesh from this layer
+        /// </summary>
+        /// <param name="instance">The instance</param>
+        public void RemoveInstance(VoxelMesh instance) {
+            int meshIndex = parameters.instance ? meshIndices[instance.command] : 0;
+            int instanceIndex = instanceIndices[instance];
+            instanceIndices.Remove(instance);
+
+            instances[meshIndex].RemoveAtSwapBack(instanceIndex);
+            if (parameters.transform && instances[meshIndex].Count > instanceIndex) {
+                layerBuffers.UpdateTransform(meshIndex, instanceIndex, instances[meshIndex][instanceIndex].transform.localToWorldMatrix);
+            }
+            if (parameters.instance) {
+                if (instances[meshIndex].Count == 0) { // Remove mesh
+                    instances.RemoveAtSwapBack(meshIndex);
+                    meshIndices.Remove(instance.command);
+                    layerBuffers.RemoveMesh(meshIndex);
+                }
+                else { // Remove instance
+                    layerBuffers.SetInstances(meshIndex, instances[meshIndex].Count, meshBuffers.GetChunks(instance.command).Length);
+                }
+            }
+            else { // Remove mesh
+                layerBuffers.RemoveMesh(instanceIndex);
+            }
+        }
+
+
+        private void UpdateChunks() {
+            if (parameters.instance) {
+                for (int i = 0; i < instances.Count; i++) {
+                    layerBuffers.UpdateChunks(meshBuffers, instances[i][0].command, i);
+                }
             }
             else {
-                meshes.Add(command);
-                layerBuffers.AddMesh(meshBuffers.GetChunks(command));
-                if (parameters.instance) {
-                    layerBuffers.UpdateTransform(instances.Count, 0, transform.localToWorldMatrix);
-                    meshIndices[command] = instances.Count;
-                    instances.Add(new List<Transform> { transform });
+                for (int i = 0; i < instances[0].Count; i++) {
+                    layerBuffers.UpdateChunks(meshBuffers, instances[0][i].command, i);
                 }
-                else instances[0].Add(transform);
             }
+            layerBuffers.SynchronizeChunks();
         }
     }
 

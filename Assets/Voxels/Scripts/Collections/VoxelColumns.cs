@@ -14,7 +14,7 @@ namespace Voxels.Collections {
     /// The voxels are organized as sizeX * sizeZ columns of (y, color) pairs.
     /// </summary>
     [BurstCompile]
-    public readonly unsafe struct VoxelColumns {
+    public readonly unsafe struct VoxelColumns : IDisposable {
         public readonly int sizeX, sizeZ; // Size in the x and z dimensions
         public readonly float3 offset; // Position offset
         internal readonly NativeArray<Column> columns; // All columns

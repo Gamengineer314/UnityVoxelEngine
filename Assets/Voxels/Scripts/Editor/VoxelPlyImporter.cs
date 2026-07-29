@@ -36,6 +36,7 @@ namespace Voxels.Editor {
             VoxelColumnsAsset voxelAsset = ScriptableObject.CreateInstance<VoxelColumnsAsset>();
             voxelAsset.name = assetName;
             voxelAsset.Init(voxels);
+            voxels.Dispose();
             GameObject prefab = new(assetName, typeof(VoxelMesh));
             VoxelMesh mesh = prefab.GetComponent<VoxelMesh>();
             mesh.voxelsAsset = voxelAsset;

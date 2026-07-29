@@ -22,8 +22,11 @@ namespace Voxels.Collections {
         /// </summary>
         public int TotalSize {
             get {
-                MemoryChunk last = chunks[chunks[chunks.Last].prev].value;
-                return last.start + last.size;
+                if (chunks[chunks.Last].HasPrev) {
+                    MemoryChunk last = chunks[chunks[chunks.Last].prev].value;
+                    return last.start + last.size;
+                }
+                else return 0;
             }
         }
 

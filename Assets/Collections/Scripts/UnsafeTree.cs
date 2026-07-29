@@ -44,13 +44,14 @@ namespace Unity.Collections.LowLevel.Unsafe {
         public void Clear() {
             length = 0;
             reusable = Edge.Null;
+            buffer[0] = new Node(default, Edge.Null, Edge.Null);
         }
 
         /// <summary>
         /// Double capacity if needed to add an item
         /// </summary>
         public void Grow() {
-            if (length + 2 >= capacity) {
+            if (length + 1 >= capacity) {
                 capacity *= 2;
                 Node* newBuffer = AllocatorManager.Allocate<Node>(allocator, capacity);
                 UnsafeUtility.MemCpy(newBuffer, buffer, (length + 1) * sizeof(Node));
