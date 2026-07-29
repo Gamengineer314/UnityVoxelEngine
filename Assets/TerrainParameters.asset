@@ -14,5 +14,6 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   <chunkSize>k__BackingField: 64
   <mergeNormalsThreshold>k__BackingField: 1024
-  <jobHorizontalSize>k__BackingField: 1024
   <seenFromAbove>k__BackingField: 1
+  <jobHorizontalSize>k__BackingField: 1024
+  <asynchronousGeneration>k__BackingField: 1

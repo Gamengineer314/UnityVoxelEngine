@@ -76,10 +76,13 @@ namespace Voxels.Rendering {
 
 
         private void Update() {
-            generator.Update();
             foreach (VoxelLayer layer in VoxelLayer.AllLayers) {
                 layer.Update();
             }
+        }
+
+        private void LateUpdate() {
+            generator.Update();
         }
 
         private void Render(Camera camera) {

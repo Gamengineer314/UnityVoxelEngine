@@ -78,7 +78,7 @@ namespace Voxels.Rendering {
 
 
         private void Generate() {
-            VoxelRenderer.Instance.generator.Schedule(command, parameters.jobHorizontalSize, AddToLayer);
+            VoxelRenderer.Instance.generator.Schedule(command, parameters.jobHorizontalSize, parameters.asynchronousGeneration, AddToLayer);
         }
 
         private void AddToLayer(GenerationCommand command) {

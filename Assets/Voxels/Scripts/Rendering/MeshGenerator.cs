@@ -16,7 +16,7 @@ namespace Voxels.Rendering {
     /// </summary>
     internal class MeshGenerator {
         private readonly MeshBuffers buffers;
-        private readonly Dictionary<GenerationCommand, (List<(MeshData data, JobHandle handle)> jobs, List<Action<GenerationCommand>> onComplete)> generations = new();
+        private readonly Dictionary<GenerationCommand, (List<(MeshData data, JobHandle handle)> jobs, List<Action<GenerationCommand>> onComplete, bool asynchronous)> generations = new();
 
         public int JobCount => generations.Sum(kv => kv.Value.jobs.Count);
         public int CompletedCount => generations.Sum(kv => kv.Value.jobs.Count(j => j.handle.IsCompleted));
@@ -67,8 +67,9 @@ namespace Voxels.Rendering {
             foreach (var generation in generations) {
                 GenerationCommand command = generation.Key;
                 List<(MeshData data, JobHandle handle)> jobs = generation.Value.jobs;
+                bool asynchronous = generation.Value.asynchronous;
                 for (int i = jobs.Count - 1; i >= 0; i--) {
-                    if (jobs[i].handle.IsCompleted) {
+                    if (!asynchronous || jobs[i].handle.IsCompleted) {
                         jobs[i].handle.Complete();
                         MeshData data = jobs[i].data;
                         buffers.AddData(command, data.chunks, data.faces, data.colors);
@@ -92,8 +93,9 @@ namespace Voxels.Rendering {
         /// </summary>
         /// <param name="command">Generation command</param>
         /// <param name="jobHorizontalSize">Max horizontal size a generator job can process</param>
+        /// <param name="asynchronousGeneration">Whether meshes can be generated asynchronously over multiple frames</param>
         /// <param name="onComplete">Callback called when the generation completes</param>
-        public void Schedule(GenerationCommand command, int jobHorizontalSize, Action<GenerationCommand> onComplete = null) {
+        public void Schedule(GenerationCommand command, int jobHorizontalSize, bool asynchronousGeneration, Action<GenerationCommand> onComplete = null) {
             if (command.chunkSize <= 0 || command.chunkSize > VoxelFace.maxSize)
                 throw new ArgumentException($"Chunk size must be positive and can't exceed {VoxelFace.maxSize}", nameof(command.chunkSize));
 
@@ -107,7 +109,7 @@ namespace Voxels.Rendering {
             }
             
             List<(MeshData data, JobHandle handle)> jobs = new();
-            generations[command] = (jobs, onComplete == null ? new() : new() { onComplete });
+            generations[command] = (jobs, onComplete == null ? new() : new() { onComplete }, asynchronousGeneration);
             int nJobsX = (int)math.ceil((float)command.voxels.sizeX / jobHorizontalSize);
             int nJobsZ = (int)math.ceil((float)command.voxels.sizeZ / jobHorizontalSize);
             for (int jobZ = 0, i = 0; jobZ < nJobsZ; jobZ++) {
