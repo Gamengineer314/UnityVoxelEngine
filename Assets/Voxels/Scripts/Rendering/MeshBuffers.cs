@@ -147,15 +147,15 @@ namespace Voxels.Rendering {
                     facesIndex = chunk.StartInstance;
                     facesAllocator.Free(facesIndex);
                     faces.Length = facesAllocator.TotalSize;
-                    if (BufferUtility.MustShrink(facesBuffer.count, facesAllocator.compactSize)) ResizeFaces();
                 }
                 if (chunk.StartRenderedInstance != colorsIndex) {
                     colorsIndex = chunk.StartRenderedInstance;
                     colorsAllocator.Free(colorsIndex);
                     colors.Length = colorsAllocator.TotalSize;
-                    if (BufferUtility.MustShrink(colorsBuffer.count, facesAllocator.compactSize)) ResizeColors();
                 }
-            }   
+            }
+            if (BufferUtility.MustShrink(facesBuffer.count, facesAllocator.compactSize)) ResizeFaces();
+            if (BufferUtility.MustShrink(colorsBuffer.count, facesAllocator.compactSize)) ResizeColors();
             commandChunks.Dispose();
             chunks.Remove(command);
         }

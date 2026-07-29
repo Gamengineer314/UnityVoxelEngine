@@ -22,15 +22,10 @@ namespace Voxels.Rendering {
         public static readonly int offsets = Shader.PropertyToID("offsets");
         public static readonly int transforms = Shader.PropertyToID("transforms");
         public static readonly int renderedTransforms = Shader.PropertyToID("renderedTransforms");
-        public static readonly string shaderTexture = "_VOXEL_TEXTURE_ON";
-        public static readonly string shaderInstance = "_VOXEL_INSTANCE_ON";
-        public static readonly string shaderTransform = "_VOXEL_TRANSFORM_ON";
         public static LocalKeyword cullingInstance;
-        public static LocalKeyword cullingTransform;
 
         public static void SetKeywords(ComputeShader cullingShader) {
             cullingInstance = new LocalKeyword(cullingShader, "VOXEL_INSTANCE");
-            cullingTransform = new LocalKeyword(cullingShader, "VOXEL_TRANSFORM");
         }
     }
 

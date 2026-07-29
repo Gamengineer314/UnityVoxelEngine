@@ -1,10 +1,6 @@
 #ifndef VOXEL_SHADER_CGINC
 #define VOXEL_SHADER_CGINC
 
-#if defined(_VOXEL_INSTANCE_ON) && !defined(_VOXEL_TRANSFORM_ON)
-#error _VOXEL_INSTANCE can't be enabled without _VOXEL_TRANSFORM
-#endif
-
 #include "UnityCG.cginc"
 #define UNITY_INDIRECT_DRAW_ARGS IndirectDrawIndexedArgs
 #include "UnityIndirect.cginc"
@@ -25,9 +21,7 @@ static const uint lightLevels[] = {
 StructuredBuffer<VoxelFace> faces;
 StructuredBuffer<uint> colors;
 StructuredBuffer<CommandOffset> offsets;
-#ifdef _VOXEL_TRANSFORM_ON
 StructuredBuffer<float4x4> renderedTransforms;
-#endif
 
 uniform float quadsInterleaving; // Remove 1 pixel gaps between triangles
 
@@ -68,7 +62,7 @@ VoxelData unpackVertex(uint vertexID: SV_VertexID, uint instanceID: SV_InstanceI
 #ifdef SHADER_API_D3D11
     vertexID += unity_IndirectDrawArgs.Load(cmd * 20 + 12);
 #endif
-#if defined(_VOXEL_INSTANCE_ON) && !defined(SHADER_API_VULKAN)
+#if !defined(SHADER_API_VULKAN)
     instanceID += unity_IndirectDrawArgs.Load(cmd * 20 + 16);
 #endif
     VoxelFace face = faces[vertexID >> 2];
@@ -106,16 +100,10 @@ VoxelData unpackVertex(uint vertexID: SV_VertexID, uint instanceID: SV_InstanceI
     float3 tangent2 = float3(tangent2Arr[0], tangent2Arr[1], tangent2Arr[2]);
 
     // Transform
-#ifdef _VOXEL_TRANSFORM_ON
-#ifdef _VOXEL_INSTANCE_ON
     float4x4 transform = renderedTransforms[instanceID];
-#else
-    float4x4 transform = renderedTransforms[cmd];
-#endif
     position = mul(transform, float4(position, 1)).xyz;
     tangent1 = mul(transform, float4(tangent1, 0)).xyz;
     tangent2 = mul(transform, float4(tangent2, 0)).xyz;
-#endif
 
     VoxelData o;
     o.position = position;

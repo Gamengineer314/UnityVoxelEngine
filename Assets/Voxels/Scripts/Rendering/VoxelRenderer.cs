@@ -76,7 +76,7 @@ namespace Voxels.Rendering {
 
 
         private void Update() {
-            foreach (VoxelLayer layer in VoxelLayer.AllLayers) {
+            foreach (VoxelLayer layer in VoxelLayer.Layers) {
                 layer.Update();
             }
         }

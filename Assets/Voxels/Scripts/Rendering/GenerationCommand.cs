@@ -21,12 +21,12 @@ namespace Voxels.Rendering {
             this.textured = textured;
         }
 
-        public GenerationCommand(VoxelColumns voxels, GenerationParameters parameters, Material material) {
+        public GenerationCommand(VoxelColumns voxels, GenerationParameters parameters) {
             this.voxels = voxels;
             chunkSize = parameters.chunkSize;
             mergeNormalsThreshold = parameters.mergeNormalsThreshold;
             seenFromAbove = parameters.seenFromAbove;
-            textured = material.IsKeywordEnabled(ShaderID.shaderTexture);
+            textured = parameters.textured;
         }
     }
 

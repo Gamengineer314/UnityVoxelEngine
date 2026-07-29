@@ -21,6 +21,12 @@ namespace Voxels.Rendering {
 
         [field: SerializeField, Tooltip("Whether meshes can be generated asynchronously over multiple frames. If set to false, the main thread will block during the late update until all scheduled generations are completed so that meshes can be rendered as soon as they're instantiated.")]
         public bool asynchronousGeneration { get; private set; } = false;
+
+        [field: SerializeField, Tooltip("Whether voxel colors are stored in a separate texture instead of in the faces. This increases memory usage but it allows the greedy mesher to combine faces of different colors.")]
+        public bool textured { get; private set; } = false;
+
+        [field: SerializeField, Tooltip("Whether to use GPU instancing.")]
+        public bool instanced { get; private set; } = false;
     }
 
 }

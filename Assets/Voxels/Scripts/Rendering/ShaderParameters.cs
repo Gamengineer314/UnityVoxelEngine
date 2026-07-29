@@ -1,22 +1,18 @@
 using UnityEngine;
 
 namespace Voxels.Rendering {
+
     /// <summary>
     /// Parameters for the voxel shader
     /// </summary>
     public readonly struct ShaderParameters {
-        public readonly bool texture;
-        public readonly bool transform;
-        public readonly bool instance;
+        public readonly bool textured;
+        public readonly bool instanced;
 
-        /// <summary>
-        /// Get the parameters of a voxel material
-        /// </summary>
-        /// <param name="material">The material</param>
-        public ShaderParameters(Material material) {
-            texture = material.IsKeywordEnabled(ShaderID.shaderTexture);
-            transform = material.IsKeywordEnabled(ShaderID.shaderTexture);
-            instance = material.IsKeywordEnabled(ShaderID.shaderTexture);
+        public ShaderParameters(bool textured, bool instanced) {
+            this.textured = textured;
+            this.instanced = instanced;
         }
     }
+
 }

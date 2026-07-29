@@ -46,14 +46,11 @@ namespace Voxels.Rendering {
             if (commandsBuffer == null || chunksBuffer.count != offsetsBuffer.count) { // Create corresponding commands and offsets buffers
                 commandsBuffer?.Dispose();
                 commandsBuffer = new(GraphicsBuffer.Target.IndirectArguments | GraphicsBuffer.Target.Structured, chunksBuffer.count * 5, sizeof(uint));
-                GraphicsBuffer.IndirectDrawIndexedArgs[] commands = new GraphicsBuffer.IndirectDrawIndexedArgs[chunksBuffer.count];
-                for (int i = 0; i < chunksBuffer.count; i++) commands[i] = new() { instanceCount = 1 };
-                commandsBuffer.SetData(commands);
                 offsetsBuffer?.Dispose();
                 offsetsBuffer = new(GraphicsBuffer.Target.Structured | GraphicsBuffer.Target.Counter, chunksBuffer.count, sizeof(CommandOffset));
                 renderParams.matProps.SetBuffer(ShaderID.offsets, offsetsBuffer);
             }
-            if (parameters.transform && (renderedTransformsBuffer == null || renderedTransformsBuffer.count != renderedTransformsSize)) {
+            if (renderedTransformsBuffer == null || renderedTransformsBuffer.count != renderedTransformsSize) {
                 renderedTransformsBuffer?.Dispose();
                 renderedTransformsBuffer = new(GraphicsBuffer.Target.Structured, renderedTransformsSize, sizeof(Matrix4x4));
                 renderParams.matProps.SetBuffer(ShaderID.renderedTransforms, renderedTransformsBuffer);
@@ -61,10 +58,8 @@ namespace Voxels.Rendering {
             cullingShader.SetBuffer(0, ShaderID.chunks, chunksBuffer);
             cullingShader.SetBuffer(0, ShaderID.commands, commandsBuffer);
             cullingShader.SetBuffer(0, ShaderID.offsets, offsetsBuffer);
-            if (parameters.transform) {
-                cullingShader.SetBuffer(0, ShaderID.transforms, transformsBuffer);
-                cullingShader.SetBuffer(0, ShaderID.renderedTransforms, renderedTransformsBuffer);
-            }
+            cullingShader.SetBuffer(0, ShaderID.transforms, transformsBuffer);
+            cullingShader.SetBuffer(0, ShaderID.renderedTransforms, renderedTransformsBuffer);
         }
 
 
@@ -75,7 +70,7 @@ namespace Voxels.Rendering {
             VoxelRenderer renderer = VoxelRenderer.Instance;
             ComputeShader cullingShader = renderer.cullingShader;
             Camera camera = renderParams.camera;
-            int nGroups = parameters.instance ? nChunks : Mathf.CeilToInt((float)nChunks / cullingGroupSize);
+            int nGroups = parameters.instanced ? nChunks : Mathf.CeilToInt((float)nChunks / cullingGroupSize);
 
             // Set camera data
             SetCullingKeywords();
@@ -86,7 +81,7 @@ namespace Voxels.Rendering {
             cullingShader.SetVector(ShaderID.cameraRightPlane, new Vector4(cameraPlanes[1].normal.x, cameraPlanes[1].normal.y, cameraPlanes[1].normal.z, cameraPlanes[1].distance));
             cullingShader.SetVector(ShaderID.cameraDownPlane, new Vector4(cameraPlanes[2].normal.x, cameraPlanes[2].normal.y, cameraPlanes[2].normal.z, cameraPlanes[2].distance));
             cullingShader.SetVector(ShaderID.cameraUpPlane, new Vector4(cameraPlanes[3].normal.x, cameraPlanes[3].normal.y, cameraPlanes[3].normal.z, cameraPlanes[3].distance));
-            if (!parameters.instance) cullingShader.SetInt(ShaderID.nChunks, nChunks);
+            if (!parameters.instanced) cullingShader.SetInt(ShaderID.nChunks, nChunks);
 
             // Frustum culling
             offsetsBuffer.SetCounterValue(0);
@@ -96,8 +91,7 @@ namespace Voxels.Rendering {
         }
 
         private void SetCullingKeywords() {
-            VoxelRenderer.Instance.cullingShader.SetKeyword(in ShaderID.cullingInstance, parameters.instance);
-            VoxelRenderer.Instance.cullingShader.SetKeyword(in ShaderID.cullingTransform, parameters.transform);
+            VoxelRenderer.Instance.cullingShader.SetKeyword(in ShaderID.cullingInstance, parameters.instanced);
         }
 
 

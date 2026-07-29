@@ -19,7 +19,7 @@ namespace Voxels.Rendering {
             get => command.voxels;
             set {
                 RemoveFromLayer();
-                command = new GenerationCommand(value, parameters, material);
+                command = new GenerationCommand(value, parameters);
                 Generate();
             }
         }
@@ -29,7 +29,7 @@ namespace Voxels.Rendering {
             set {
                 RemoveFromLayer();
                 parameters = value;
-                command = new GenerationCommand(command.voxels, parameters, material);
+                command = new GenerationCommand(command.voxels, parameters);
                 Generate();
             }
         }
@@ -39,7 +39,7 @@ namespace Voxels.Rendering {
             set {
                 RemoveFromLayer();
                 material = value;
-                command = new GenerationCommand(command.voxels, parameters, material);
+                command = new GenerationCommand(command.voxels, parameters);
                 Generate();
             }
         }
@@ -47,7 +47,7 @@ namespace Voxels.Rendering {
         private void OnValidate() {
             RemoveFromLayer();
             if ((voxelsAsset && voxelsAsset.voxels.IsCreated || command.voxels.IsCreated) && parameters && parameters.chunkSize != 0 && material && VoxelRenderer.Instance) {
-                if (voxelsAsset && voxelsAsset.voxels.IsCreated) command = new GenerationCommand(voxelsAsset.voxels, parameters, material);
+                if (voxelsAsset && voxelsAsset.voxels.IsCreated) command = new GenerationCommand(voxelsAsset.voxels, parameters);
                 Generate();
             }
             else command = default;
@@ -56,14 +56,14 @@ namespace Voxels.Rendering {
 
         internal void Start() {
             if (voxelsAsset && !command.voxels.IsCreated) {
-                command = new GenerationCommand(voxelsAsset.voxels, parameters, material);
+                command = new GenerationCommand(voxelsAsset.voxels, parameters);
                 Generate();
             }
         }
 
         private void OnEnable() {
             if (layer != null) {
-                layer = VoxelLayer.GetLayer(gameObject.layer, material);
+                layer = VoxelLayer.GetLayer(this);
                 layer.AddInstance(this);
             }
         }
@@ -83,7 +83,7 @@ namespace Voxels.Rendering {
 
         private void AddToLayer(GenerationCommand command) {
             if (this && layer == null && command.Equals(this.command)) {
-                layer = VoxelLayer.GetLayer(gameObject.layer, material);
+                layer = VoxelLayer.GetLayer(this);
                 if (gameObject.activeSelf) layer.AddInstance(this);
                 VoxelRenderer.Instance.meshBuffers.AddReference(command);
             }

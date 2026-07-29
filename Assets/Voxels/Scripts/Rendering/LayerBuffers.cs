@@ -33,15 +33,15 @@ namespace Voxels.Rendering {
 
         public unsafe LayerBuffers(ShaderParameters parameters) {
             chunksBuffer = new(GraphicsBuffer.Target.Structured, BufferUtility.minLength, sizeof(VoxelChunk));
-            transformsBuffer = parameters.transform ? new(GraphicsBuffer.Target.Structured, BufferUtility.minLength, sizeof(Matrix4x4)) : null;
+            transformsBuffer = new(GraphicsBuffer.Target.Structured, BufferUtility.minLength, sizeof(Matrix4x4));
             renderedTransformsSize = BufferUtility.minLength;
             arrays.chunks = new(Allocator.Persistent);
             arrays.chunkLinks = new(Allocator.Persistent);
             arrays.firstChunks = new(Allocator.Persistent);
-            arrays.transforms = parameters.transform ? new(Allocator.Persistent) : default;
-            arrays.transformsAllocator = parameters.instance ? new(Allocator.Persistent) : default;
-            arrays.renderedTransformsAllocator = parameters.instance ? new(Allocator.Persistent) : default;
-            arrays.allocatorIndices = parameters.instance ? new(Allocator.Persistent) : default;
+            arrays.transforms = new(Allocator.Persistent);
+            arrays.transformsAllocator = parameters.instanced ? new(Allocator.Persistent) : default;
+            arrays.renderedTransformsAllocator = parameters.instanced ? new(Allocator.Persistent) : default;
+            arrays.allocatorIndices = parameters.instanced ? new(Allocator.Persistent) : default;
         }
 
         public void Dispose() {
@@ -74,14 +74,11 @@ namespace Voxels.Rendering {
                 arrays.allocatorIndices.Add(indices);
                 startInstance = arrays.transformsAllocator[indices.x].start;
                 startRenderedInstance = arrays.renderedTransformsAllocator[indices.y].start;
-                if (BufferUtility.MustGrow(renderedTransformsSize, arrays.renderedTransformsAllocator.TotalSize)) ResizeRenderedTransforms();
             }
             else {
-                if (arrays.transforms.IsCreated) arrays.transforms.Length++;
-                startInstance = arrays.firstChunks.Length;
+                startInstance = arrays.transforms.Length++;
                 startRenderedInstance = 0;
             }
-            if (arrays.transforms.IsCreated && BufferUtility.MustGrow(transformsBuffer.count, arrays.transforms.Length)) ResizeTransforms();
 
             // Add chunks
             int startChunk = arrays.chunks.Length;
@@ -93,8 +90,16 @@ namespace Voxels.Rendering {
             arrays.chunkLinks[startChunk] = new int2(-arrays.firstChunks.Length, arrays.chunkLinks[startChunk].y);
             arrays.chunkLinks[^1] = new int2(arrays.chunkLinks[^1].x, -1);
             arrays.firstChunks.Add(startChunk);
+            
             if (BufferUtility.MustGrow(chunksBuffer.count, arrays.chunks.Length)) ResizeChunks();
             else chunksBuffer.SetData(arrays.chunks.AsArray(), startChunk, startChunk, arrays.chunks.Length - startChunk);
+            if (BufferUtility.MustGrow(transformsBuffer.count, arrays.transforms.Length)) ResizeTransforms();
+            if (arrays.allocatorIndices.IsCreated) {
+                if (BufferUtility.MustGrow(renderedTransformsSize, arrays.renderedTransformsAllocator.TotalSize)) ResizeRenderedTransforms();
+            }
+            else {
+                renderedTransformsSize = transformsBuffer.count;
+            }
         }
 
 
@@ -110,7 +115,7 @@ namespace Voxels.Rendering {
                 arrays.renderedTransformsAllocator.Free(indices.y);
                 arrays.allocatorIndices.RemoveAtSwapBack(index);
             }
-            else if (arrays.transforms.IsCreated) arrays.transforms.RemoveAtSwapBack(index);
+            else arrays.transforms.RemoveAtSwapBack(index);
 
             // Remove chunks
             int i = arrays.firstChunks[index];
@@ -129,9 +134,26 @@ namespace Voxels.Rendering {
             }
             arrays.firstChunks.RemoveAtSwapBack(index);
 
+            // Update chunks
+            if (!arrays.allocatorIndices.IsCreated && index != arrays.transforms.Length) {
+                for (i = arrays.firstChunks[index]; i != -1; i = arrays.chunkLinks[i].y) {
+                    VoxelChunk chunk = arrays.chunks[i];
+                    arrays.chunks[i] = new VoxelChunk(
+                        chunk.center, chunk.size, chunk.offset.position, chunk.offset.Color,
+                        chunk.Normal, chunk.StartFace, chunk.FaceCount, index, chunk.StartRenderedInstance, 1
+                    );
+                    chunksBuffer.SetData(arrays.chunks.AsArray(), i, i, 1);
+                }
+            }
+
             if (BufferUtility.MustShrink(chunksBuffer.count, arrays.chunks.Length)) ResizeChunks();
-            if (arrays.transforms.IsCreated && BufferUtility.MustShrink(transformsBuffer.count, arrays.transformsAllocator.compactSize)) ResizeTransforms();
-            if (arrays.allocatorIndices.IsCreated && BufferUtility.MustShrink(renderedTransformsSize, arrays.renderedTransformsAllocator.compactSize)) ResizeRenderedTransforms();
+            if (BufferUtility.MustShrink(transformsBuffer.count, arrays.transformsAllocator.compactSize)) ResizeTransforms();
+            if (arrays.allocatorIndices.IsCreated) {
+                if (BufferUtility.MustShrink(renderedTransformsSize, arrays.renderedTransformsAllocator.compactSize)) ResizeRenderedTransforms();
+            }
+            else {
+                renderedTransformsSize = transformsBuffer.count;
+            }
         }
 
 

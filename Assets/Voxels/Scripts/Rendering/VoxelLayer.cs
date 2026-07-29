@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using Unity.Collections;
 using UnityEngine;
 
@@ -9,6 +10,7 @@ namespace Voxels.Rendering {
     /// </summary>
     internal class VoxelLayer {
         public readonly int layer;
+        public readonly Material material;
         public readonly ShaderParameters parameters;
         public readonly LayerBuffers layerBuffers;
         private readonly MeshBuffers meshBuffers;
@@ -17,15 +19,16 @@ namespace Voxels.Rendering {
         private readonly Dictionary<VoxelMesh, int> instanceIndices = new();
         private readonly Dictionary<GenerationCommand, int> meshIndices = new();
         
-        private static readonly Dictionary<Material, VoxelLayer[]> layers = new();
+        private static readonly Dictionary<(Material, ShaderParameters), VoxelLayer[]> layers = new();
 
 
-        public VoxelLayer(int layer, ShaderParameters parameters) {
+        public VoxelLayer(int layer, Material material, ShaderParameters parameters) {
             this.layer = layer;
+            this.material = material;
             this.parameters = parameters;
             layerBuffers = new LayerBuffers(parameters);
             meshBuffers = VoxelRenderer.Instance.meshBuffers;
-            if (!parameters.instance) instances.Add(new List<VoxelMesh>());
+            if (!parameters.instanced) instances.Add(new List<VoxelMesh>());
             meshBuffers.bufferCompacted += UpdateChunks;
         }
 
@@ -36,20 +39,21 @@ namespace Voxels.Rendering {
 
 
         /// <summary>
-        /// Get the rendering layer for a layer and a material
+        /// Get the rendering layer for an instance
         /// </summary>
-        /// <param name="layer">The layer</param>
-        /// <param name="material">The material</param>
+        /// <param name="instance">The instance</param>
         /// <returns>The rendering layer</returns>
-        public static VoxelLayer GetLayer(int layer, Material material) {
-            if (!layers.TryGetValue(material, out VoxelLayer[] materialLayers)) {
+        public static VoxelLayer GetLayer(VoxelMesh instance) {
+            Material material = instance.material;
+            ShaderParameters parameters = new(instance.parameters.textured, instance.parameters.instanced);
+            int layer = instance.gameObject.layer;
+            if (!layers.TryGetValue((material, parameters), out VoxelLayer[] materialLayers)) {
                 materialLayers = new VoxelLayer[32];
-                layers[material] = materialLayers;
+                layers[(material, parameters)] = materialLayers;
                 material.SetFloat(ShaderID.quadsInterleaving, VoxelRenderer.Instance.QuadsInterleaving);
             }
             if (materialLayers[layer] == null) {
-                ShaderParameters parameters = new(material);
-                materialLayers[layer] = new VoxelLayer(layer, parameters);
+                materialLayers[layer] = new VoxelLayer(layer, material, parameters);
             }
             return materialLayers[layer];
         }
@@ -58,28 +62,23 @@ namespace Voxels.Rendering {
         /// Get the non-empty rendering layers for all layers in a layer mask and all materials
         /// </summary>
         /// <param name="layerMask">The layer mask</param>
-        /// <returns>Iterable of (layer, material, rendering layer) tuples</returns>
-        public static IEnumerable<(int, Material, VoxelLayer)> GetLayers(int layerMask) {
-            foreach (KeyValuePair<Material, VoxelLayer[]> kv in layers) {
+        /// <returns>Enumerable of rendering layers</returns>
+        public static IEnumerable<VoxelLayer> GetLayers(int layerMask) {
+            foreach (KeyValuePair<(Material, ShaderParameters), VoxelLayer[]> kv in layers) {
                 for (int layer = 0; layer < 32; layer++) {
                     if ((layerMask & (1 << layer)) != 0 && kv.Value[layer] != null && kv.Value[layer].layerBuffers.ChunkCount != 0) {
-                        yield return (layer, kv.Key, kv.Value[layer]);
+                        yield return kv.Value[layer];
                     }
                 }
             }
         }
 
         /// <summary>
-        /// All materials used by voxel meshes
-        /// </summary>
-        public static IEnumerable<Material> Materials => layers.Keys;
-
-        /// <summary>
         /// All rendering layers
         /// </summary>
-        public static IEnumerable<VoxelLayer> AllLayers {
+        public static IEnumerable<VoxelLayer> Layers {
             get {
-                foreach (KeyValuePair<Material, VoxelLayer[]> kv in layers) {
+                foreach (KeyValuePair<(Material, ShaderParameters), VoxelLayer[]> kv in layers) {
                     for (int layer = 0; layer < 32; layer++) {
                         if (kv.Value[layer] != null) yield return kv.Value[layer];
                     }
@@ -88,10 +87,15 @@ namespace Voxels.Rendering {
         }
 
         /// <summary>
+        /// All materials used by voxel meshes
+        /// </summary>
+        public static IEnumerable<Material> Materials => layers.Keys.Select(k => k.Item1);
+
+        /// <summary>
         /// Dispose all rendering layers
         /// </summary>
         public static void DisposeAll() {
-            foreach (VoxelLayer layer in AllLayers) {
+            foreach (VoxelLayer layer in Layers) {
                 layer.Dispose();
             }
             layers.Clear();
@@ -108,10 +112,10 @@ namespace Voxels.Rendering {
                     VoxelMesh instance = meshInstances[j];
                     if (instance.gameObject.layer != layer) {
                         RemoveInstance(instance);
-                        instance.layer = GetLayer(instance.gameObject.layer, instance.material);
+                        instance.layer = GetLayer(instance);
                         instance.layer.AddInstance(instance);
                     }
-                    else if (parameters.transform) layerBuffers.UpdateTransform(i, j, instance.transform.localToWorldMatrix);
+                    else layerBuffers.UpdateTransform(i, j, instance.transform.localToWorldMatrix);
                 }
             }
         }
@@ -123,13 +127,13 @@ namespace Voxels.Rendering {
         /// <param name="instance">The instance</param>
         public void AddInstance(VoxelMesh instance) {
             int instanceIndex;
-            if (parameters.instance && meshIndices.TryGetValue(instance.command, out int meshIndex)) { // Add instance to existing mesh
+            if (parameters.instanced && meshIndices.TryGetValue(instance.command, out int meshIndex)) { // Add instance to existing mesh
                 instanceIndex = instances[meshIndex].Count;
                 layerBuffers.SetInstances(meshIndex, instances[meshIndex].Count + 1, meshBuffers.GetChunks(instance.command).Length);
             }
             else { // Add mesh with 1 instance
                 layerBuffers.AddMesh(meshBuffers, instance.command);
-                if (parameters.instance) {
+                if (parameters.instanced) {
                     meshIndex = instances.Count;
                     instanceIndex = 0;
                     meshIndices[instance.command] = meshIndex;
@@ -142,7 +146,7 @@ namespace Voxels.Rendering {
             }
             instanceIndices[instance] = instanceIndex;
             instances[meshIndex].Add(instance);
-            if (parameters.transform) layerBuffers.UpdateTransform(meshIndex, instanceIndex, instance.transform.localToWorldMatrix);
+            layerBuffers.UpdateTransform(meshIndex, instanceIndex, instance.transform.localToWorldMatrix);
         }
 
 
@@ -151,15 +155,15 @@ namespace Voxels.Rendering {
         /// </summary>
         /// <param name="instance">The instance</param>
         public void RemoveInstance(VoxelMesh instance) {
-            int meshIndex = parameters.instance ? meshIndices[instance.command] : 0;
+            int meshIndex = parameters.instanced ? meshIndices[instance.command] : 0;
             int instanceIndex = instanceIndices[instance];
             instanceIndices.Remove(instance);
 
             instances[meshIndex].RemoveAtSwapBack(instanceIndex);
-            if (parameters.transform && instances[meshIndex].Count > instanceIndex) {
+            if (instances[meshIndex].Count > instanceIndex) {
                 layerBuffers.UpdateTransform(meshIndex, instanceIndex, instances[meshIndex][instanceIndex].transform.localToWorldMatrix);
             }
-            if (parameters.instance) {
+            if (parameters.instanced) {
                 if (instances[meshIndex].Count == 0) { // Remove mesh
                     instances.RemoveAtSwapBack(meshIndex);
                     meshIndices.Remove(instance.command);
@@ -176,7 +180,7 @@ namespace Voxels.Rendering {
 
 
         private void UpdateChunks() {
-            if (parameters.instance) {
+            if (parameters.instanced) {
                 for (int i = 0; i < instances.Count; i++) {
                     layerBuffers.UpdateChunks(meshBuffers, instances[i][0].command, i);
                 }

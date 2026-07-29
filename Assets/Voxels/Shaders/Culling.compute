@@ -1,6 +1,5 @@
 #pragma kernel cull
 
-#pragma multi_compile_local _ VOXEL_TRANSFORM
 #pragma multi_compile_local _ VOXEL_INSTANCE
 
 #include "VoxelStructs.cginc"
@@ -19,25 +18,23 @@ uniform uint nChunks;
 StructuredBuffer<VoxelChunk> chunks; // Input: chunks
 RWStructuredBuffer<uint> commands; // Output: indirect arguments
 RWStructuredBuffer<CommandOffset> offsets; // Output: offsets
-#ifdef VOXEL_TRANSFORM
 StructuredBuffer<float4x4> transforms; // Input: transform of each instance
 RWStructuredBuffer<float4x4> renderedTransforms; // Output: transform of each rendered instance
-#endif
 
 
-#ifdef VOXEL_TRANSFORM
-#define TRANSFORM_DECL ,float4x4 transform
-#define TRANSFORM_VAL ,transform
-#else
-#define TRANSFORM_DECL
-#define TRANSFORM_VAL
-#endif
+void addCommand(uint indexCountPerInstance, uint instanceCount, uint startIndex, uint baseVertexIndex, uint startInstance, CommandOffset offset) {
+    uint cmd = offsets.IncrementCounter();
+    commands[cmd * 5] = indexCountPerInstance;
+    commands[cmd * 5 + 1] = instanceCount;
+    commands[cmd * 5 + 2] = startIndex;
+    commands[cmd * 5 + 3] = baseVertexIndex;
+    commands[cmd * 5 + 4] = startInstance;
+    offsets[cmd] = offset;
+}
 
 
-bool outsidePlane(float3 center, float3 size, float4 plane TRANSFORM_DECL) {
-#ifdef VOXEL_TRANSFORM
+bool outsidePlane(float3 center, float3 size, float4 plane, float4x4 transform) {
     plane = mul(plane, transform);
-#endif
     float3 normalSign = sign(plane.xyz);
     float3 closestPoint = center + size * normalSign;
     return dot(float4(closestPoint, 1), plane) < 0;
@@ -45,26 +42,27 @@ bool outsidePlane(float3 center, float3 size, float4 plane TRANSFORM_DECL) {
 
 
 // Ignore chunks outside of camera view
-bool boundsCulling(float3 center, float3 size TRANSFORM_DECL) {
-    if (outsidePlane(center, size, cameraFarPlane TRANSFORM_VAL)) return false;
-    if (outsidePlane(center, size, cameraLeftPlane TRANSFORM_VAL)) return false;
-    if (outsidePlane(center, size, cameraRightPlane TRANSFORM_VAL)) return false;
-    if (outsidePlane(center, size, cameraUpPlane TRANSFORM_VAL)) return false;
-    if (outsidePlane(center, size, cameraDownPlane TRANSFORM_VAL)) return false;
-    return true;
+bool boundsCulling(float3 center, float3 size, float4x4 transform) {
+    return !(
+        outsidePlane(center, size, cameraFarPlane, transform) ||
+        outsidePlane(center, size, cameraLeftPlane, transform) ||
+        outsidePlane(center, size, cameraRightPlane, transform) ||
+        outsidePlane(center, size, cameraUpPlane, transform) ||
+        outsidePlane(center, size, cameraDownPlane, transform)
+    );
 }
 
 
 // Ignore chunks that are invisible because of their normal
-bool normalCulling(float3 center, float3 size, uint normalID TRANSFORM_DECL) {
+bool normalCulling(float3 center, float3 size, uint normalID, float4x4 transform) {
     if (normalID == NORMAL_ANY) return true;
-    float3 normal = getNormal(normalID);
-    float3 back = center - normal * size;
-#ifdef VOXEL_TRANSFORM
-    back = mul(transform, float4(back, 1)).xyz;
-    normal = mul(transform, float4(normal, 0)).xyz;
-#endif
-    return dot(back - cameraPosition.xyz, normal) <= 0;
+    else {
+        float3 normal = getNormal(normalID);
+        float3 back = center - normal * size;
+        back = mul(transform, float4(back, 1)).xyz;
+        normal = mul(transform, float4(normal, 0)).xyz;
+        return dot(back - cameraPosition.xyz, normal) <= 0;
+    }
 }
 
 
@@ -81,18 +79,17 @@ void cull(uint3 group : SV_GroupID, uint thread : SV_GroupThreadID) {
 
     // Add instances to renderedTransforms
     for (uint i = 0; i < chunk.instanceCount; i += GROUP_SIZE) {
-        bool add;
-        float4x4 transform;
+        bool add = 0;
+        float4x4 transform = 0;
         if (i + thread.x < chunk.instanceCount) {
             transform = transforms[chunk.startInstance + i + thread.x];
-            add = normalCulling(chunk.center, chunk.size, chunk.normal TRANSFORM_VAL) && boundsCulling(chunk.center, chunk.size TRANSFORM_VAL);
+            add = normalCulling(chunk.center, chunk.size, chunk.normal, transform) && boundsCulling(chunk.center, chunk.size, transform);
         }
-        else add = 0;
         
         // Prefix sum
         sum[thread.x] = add;
         GroupMemoryBarrierWithGroupSync();
-        for (uint bit = 1; bit < GROUP_SIZE; bit <<= 1) {
+        for (int bit = 1; bit < GROUP_SIZE; bit <<= 1) {
             if (thread.x & bit) sum[thread.x] += sum[(thread.x & -bit) - 1];
             GroupMemoryBarrierWithGroupSync();
         }
@@ -103,12 +100,7 @@ void cull(uint3 group : SV_GroupID, uint thread : SV_GroupThreadID) {
 
     // Add command if some instances were added
     if (thread.x == 0 && count > 0) {
-        uint cmd = offsets.IncrementCounter();
-        commands[cmd * 5] = chunk.faceCount * 6; // indexCountPerInstance
-        commands[cmd * 5 + 1] = count; // instanceCount
-        commands[cmd * 5 + 3] = chunk.startFace * 4; // baseVertexIndex
-        commands[cmd * 5 + 4] = chunk.startRenderedInstance; // startInstance
-        offsets[cmd] = chunk.offset;
+        addCommand(chunk.faceCount * 6, count, 0, chunk.startFace * 4, chunk.startRenderedInstance, chunk.offset);
     }
 }
 
@@ -116,19 +108,13 @@ void cull(uint3 group : SV_GroupID, uint thread : SV_GroupThreadID) {
 
 [numthreads(64, 1, 1)]
 void cull(uint3 id : SV_DispatchThreadID) {
-    if (id.x >= nChunks) return;
-    VoxelChunk chunk = chunks[id.x];
-#ifdef VOXEL_TRANSFORM
-    float4x4 transform = transforms[chunk.startInstance];
-#endif
-    if (normalCulling(chunk.center, chunk.size, chunk.normal TRANSFORM_VAL) && boundsCulling(chunk.center, chunk.size TRANSFORM_VAL)) {
-        uint cmd = offsets.IncrementCounter();
-        commands[cmd * 5] = chunk.faceCount * 6; // indexCountPerInstance
-        commands[cmd * 5 + 3] = chunk.startFace * 4; // baseVertexIndex
-        offsets[cmd] = chunk.offset;
-#ifdef VOXEL_TRANSFORM
-        renderedTransforms[cmd] = transform;
-#endif
+    if (id.x < nChunks) {
+        VoxelChunk chunk = chunks[id.x];
+        float4x4 transform = transforms[chunk.startInstance];
+        if (normalCulling(chunk.center, chunk.size, chunk.normal, transform) && boundsCulling(chunk.center, chunk.size, transform)) {
+            addCommand(chunk.faceCount * 6, 1, 0, chunk.startFace * 4, chunk.startInstance, chunk.offset);
+            renderedTransforms[chunk.startInstance] = transform;
+        }
     }
 }
 

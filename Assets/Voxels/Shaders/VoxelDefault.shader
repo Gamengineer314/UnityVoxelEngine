@@ -1,8 +1,6 @@
 Shader "Voxels/Default" {
     Properties {
         [Toggle] _VOXEL_TEXTURE ("Texture", Float) = 0
-        [Toggle] _VOXEL_TRANSFORM ("Transform", Float) = 0
-        [Toggle] _VOXEL_INSTANCE ("Instance", Float) = 0
     }
     SubShader {
         Pass {
@@ -11,8 +9,6 @@ Shader "Voxels/Default" {
             #pragma fragment frag
             
             #pragma shader_feature_local _VOXEL_TEXTURE_ON
-            #pragma shader_feature_local _VOXEL_TRANSFORM_ON
-            #pragma shader_feature_local _VOXEL_INSTANCE_ON
             
             #include "VoxelShader.cginc"
 
