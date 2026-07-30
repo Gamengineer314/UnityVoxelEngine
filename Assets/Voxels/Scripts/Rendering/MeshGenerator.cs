@@ -248,7 +248,7 @@ namespace Voxels.Rendering {
                                     currentSubChunkStart.x = currentChunkStart.x + subChunkX * subChunkSize;
                                     currentSubChunkSize.x = math.min(subChunkSize, chunkEndX - currentSubChunkStart.x);
                                     for (int subChunkY = 0; subChunkY < nSubChunksY; subChunkY++) {
-                                        currentSubChunkStart.y = yRange.x + subChunkY * subChunkSize;
+                                        currentSubChunkStart.y = currentChunkStart.y + subChunkY * subChunkSize;
                                         currentSubChunkSize.y = math.min(subChunkSize, yRange.y + 1 - currentSubChunkStart.y);
 
                                         // Generate one chunk

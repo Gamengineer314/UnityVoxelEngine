@@ -160,12 +160,18 @@ namespace Voxels.Rendering {
             instanceIndices.Remove(instance);
 
             instances[meshIndex].RemoveAtSwapBack(instanceIndex);
+            if (instanceIndex < instances[meshIndex].Count) {
+                instanceIndices[instances[meshIndex][instanceIndex]] = instanceIndex;
+            }
             if (instances[meshIndex].Count > instanceIndex) {
                 layerBuffers.UpdateTransform(meshIndex, instanceIndex, instances[meshIndex][instanceIndex].transform.localToWorldMatrix);
             }
             if (parameters.instanced) {
                 if (instances[meshIndex].Count == 0) { // Remove mesh
                     instances.RemoveAtSwapBack(meshIndex);
+                    if (meshIndex < instances.Count) {
+                        meshIndices[instances[meshIndex][0].command] = meshIndex;
+                    }
                     meshIndices.Remove(instance.command);
                     layerBuffers.RemoveMesh(meshIndex);
                 }

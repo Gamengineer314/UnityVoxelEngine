@@ -1,6 +1,6 @@
 #if UNITY_EDITOR
+using System.Collections.Generic;
 using System.IO;
-using System.Globalization;
 using UnityEngine;
 using UnityEditor;
 using UnityEditor.AssetImporters;
@@ -8,26 +8,33 @@ using Unity.Collections;
 using Unity.Mathematics;
 using Voxels.Collections;
 using Voxels.Rendering;
-using System.Collections.Generic;
 
 namespace Voxels.Editor {
 
-    [ScriptedImporter(1, "ply")]
-    public class VoxelPlyImporter : ScriptedImporter {
-        [SerializeField] private float plyVoxelSize = 0.1f;
+    /// <summary>
+    /// Voxel model importer
+    /// </summary>
+    public abstract class VoxelImporter : ScriptedImporter {
         [SerializeField] private float3 offset;
         [SerializeField] private bool fillHoles = true;
         [SerializeField] private bool removeInside = true;
+        [SerializeField] private bool swapVerticalAxis = true;
+
+
+        /// <summary>
+        /// Read voxels from a file
+        /// </summary>
+        /// <param name="path">File path</param>
+        /// <returns>3D array of voxel colors</returns>
+        protected abstract Native3DArray<Color32> ReadVoxels(string path);
 
 
         public override void OnImportAsset(AssetImportContext ctx) {
             // Convert .ply to VoxelColumns
-            Native3DArray<Color32> colors;
-            using (StreamReader reader = new(ctx.assetPath)) {
-                colors = ReadVoxels(reader);
-            }
+            Native3DArray<Color32> colors = ReadVoxels(ctx.assetPath);
             if (fillHoles) FillHoles(colors);
             if (removeInside) RemoveInside(colors);
+            if (swapVerticalAxis) colors = SwapVerticalAxis(colors);
             VoxelColumns voxels = new(colors, offset);
             colors.Dispose();
 
@@ -46,61 +53,6 @@ namespace Voxels.Editor {
             ctx.AddObjectToAsset("prefab", prefab);
             ctx.SetMainObject(prefab);
             ctx.AddObjectToAsset("voxels", voxelAsset);
-        }
-
-
-        /// <summary>
-        /// Read voxels from a .ply file
-        /// </summary>
-        /// <param name="reader">File reader</param>
-        /// <returns>3D array of voxel colors</returns>
-        private Native3DArray<Color32> ReadVoxels(StreamReader reader) {
-            // Read header
-            string line;
-            do {
-                line = reader.ReadLine();
-            } while (!line.StartsWith("element vertex"));
-            int verticesCount = int.Parse(line.Split(' ')[2]);
-            do {
-                line = reader.ReadLine();
-            } while (!line.StartsWith("element face"));
-            int facesCount = int.Parse(line.Split(' ')[2]);
-            do {
-                line = reader.ReadLine();
-            } while (!line.StartsWith("end_header"));
-
-            // Read vertices
-            int3[] vertices = new int3[verticesCount];
-            Color32[] vertexColors = new Color32[verticesCount];
-            int3 min = 0, max = 0;
-            for (int i = 0; i < verticesCount; i++) {
-                string[] words = reader.ReadLine().Split(' ');
-                vertices[i] = (int3)math.round(new float3(
-                    float.Parse(words[0], CultureInfo.InvariantCulture),
-                    float.Parse(words[1], CultureInfo.InvariantCulture),
-                    float.Parse(words[2], CultureInfo.InvariantCulture)
-                ) / plyVoxelSize);
-                vertexColors[i] = new Color32(
-                    byte.Parse(words[3], CultureInfo.InvariantCulture),
-                    byte.Parse(words[4], CultureInfo.InvariantCulture),
-                    byte.Parse(words[5], CultureInfo.InvariantCulture),
-                    255
-                );
-                min = math.min(min, vertices[i]);
-                max = math.max(max, vertices[i]);
-            }
-
-            // Read cubes
-            Native3DArray<Color32> colors = new(max.x - min.x, max.y - min.y, max.z - min.z, Allocator.Persistent);
-            for (int i = 0; i < facesCount / 6; i++) {
-                int vertIndex = int.Parse(reader.ReadLine().Split(' ')[1]);
-                int3 local = vertices[vertIndex] - min;
-                colors[local.x, local.y, local.z] = vertexColors[vertIndex];
-                for (int j = 0; j < 5; j++) {
-                    reader.ReadLine();
-                }
-            }
-            return colors;
         }
 
 
@@ -199,6 +151,25 @@ namespace Voxels.Editor {
                     }
                 }
             }
+        }
+
+
+        /// <summary>
+        /// Swap y and z axis
+        /// </summary>
+        /// <param name="colors">3D array of voxel colors</param>
+        /// <returns>Resulting 3D array of voxel colors</returns>
+        private Native3DArray<Color32> SwapVerticalAxis(Native3DArray<Color32> colors) {
+            Native3DArray<Color32> swapped = new(colors.sizeX, colors.sizeZ, colors.sizeY, Allocator.Persistent);
+            for (int x = 0; x < colors.sizeX; x++) {
+                for (int y = 0; y < colors.sizeY; y++) {
+                    for (int z = 0; z < colors.sizeZ; z++) {
+                        swapped[x, z, y] = colors[x, y, z];
+                    }
+                }
+            }
+            colors.Dispose();
+            return swapped;
         }
     }
 

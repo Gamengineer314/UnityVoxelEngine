@@ -1,9 +1,9 @@
 using UnityEngine;
 
 public class CameraFly : MonoBehaviour {
-    private const float xSensitivity = 0.025f;
-    private const float ySensitivity = 0.025f;
-    private const float speed = 200;
+    private const float xSensitivity = 1.5f;
+    private const float ySensitivity = 1.5f;
+    public float speed = 200;
 
     private float xRotation;
     private float yRotation;
@@ -27,8 +27,6 @@ public class CameraFly : MonoBehaviour {
         // Rotation
         xRotation -= Input.GetAxis("Mouse Y") * ySensitivity;
         yRotation += Input.GetAxis("Mouse X") * xSensitivity;
-        transform.rotation =
-            new Quaternion(0, Mathf.Sin(yRotation / 2), 0, Mathf.Cos(yRotation / 2)) *
-            new Quaternion(Mathf.Sin(xRotation / 2), 0, 0, Mathf.Cos(xRotation / 2));
+        transform.rotation = Quaternion.AngleAxis(yRotation, Vector3.up) * Quaternion.AngleAxis(xRotation, Vector3.right);
     }
 }

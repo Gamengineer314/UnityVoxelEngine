@@ -187,7 +187,7 @@ namespace Voxels.Rendering {
                 int newIndex = arrays.transformsAllocator.Reallocate(indices.x, chunkSize * 2, arrays.transforms);
                 if (BufferUtility.MustGrow(transformsBuffer.count, arrays.transforms.Length)) ResizeTransforms();
                 else if (newIndex != indices.x) {
-                    int start = arrays.transformsAllocator[indices.x].start;
+                    int start = arrays.transformsAllocator[newIndex].start;
                     transformsBuffer.SetData(arrays.transforms.AsArray(), start, start, chunkSize);
                 }
                 indices.x = newIndex;
@@ -198,7 +198,7 @@ namespace Voxels.Rendering {
             if (BufferUtility.MustShrink(transformsBuffer.count, arrays.transformsAllocator.compactSize)) ResizeTransforms();
 
             // Reallocate rendered transforms
-            chunkSize = arrays.transformsAllocator[indices.y].size;
+            chunkSize = arrays.renderedTransformsAllocator[indices.y].size;
             int newSize = instanceCount * chunkCount;
             if (newSize > chunkSize) {
                 indices.y = arrays.renderedTransformsAllocator.Reallocate(indices.y, chunkSize * 2);
@@ -208,7 +208,6 @@ namespace Voxels.Rendering {
                 arrays.renderedTransformsAllocator.Reallocate(indices.y, newSize / 2);
             }
             if (BufferUtility.MustShrink(renderedTransformsSize, arrays.renderedTransformsAllocator.compactSize)) ResizeRenderedTransforms();
-
             arrays.allocatorIndices[meshIndex] = indices;
 
             // Update chunks

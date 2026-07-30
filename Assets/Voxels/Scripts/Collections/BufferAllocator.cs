@@ -44,6 +44,18 @@ namespace Voxels.Collections {
             chunks.Dispose();
         }
 
+        public override string ToString() {
+            string s = "";
+            foreach (MemoryChunk chunk in chunks) {
+                s += $"[{chunk.start} {chunk.size} {chunk.isAllocated}] ";
+            }
+            s += "\n";
+            foreach (ChunkReference chunk in freeChunks) {
+                s += $"[{chunk.index} {chunk.size}] ";
+            }
+            return s;
+        }
+
 
         /// <summary>
         /// Allocate a memory chunk
@@ -52,7 +64,7 @@ namespace Voxels.Collections {
         /// <returns>Index of the chunk</returns>
         public int Allocate(int size) {
             compactSize += size;
-            freeChunks.Ceil(new(size, 0), out ChunkReference freeRef);
+            freeChunks.Ceil(new(0, size), out ChunkReference freeRef);
             freeChunks.Remove(freeRef);
             MemoryChunk free = chunks[freeRef.index].value;
             chunks.SetValue(freeRef.index, new MemoryChunk(free.start, size, true));
@@ -182,8 +194,8 @@ namespace Voxels.Collections {
             } while (node.HasNext);
 
             freeChunks.Clear();
-            index = chunks.AddLast(new MemoryChunk(start, int.MaxValue, false));
-            freeChunks.Add(new ChunkReference(index, int.MaxValue));
+            index = chunks.AddLast(new MemoryChunk(start, int.MaxValue - start, false));
+            freeChunks.Add(new ChunkReference(index, int.MaxValue - start));
         }
 
 
