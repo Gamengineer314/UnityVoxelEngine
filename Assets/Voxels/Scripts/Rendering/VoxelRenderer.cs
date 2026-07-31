@@ -1,6 +1,11 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
+using UnityEngine.SceneManagement;
+#if UNITY_EDITOR
+using UnityEditor.SceneManagement;
+#endif
 
 namespace Voxels.Rendering {
 
@@ -11,37 +16,141 @@ namespace Voxels.Rendering {
     public class VoxelRenderer : MonoBehaviour {
         internal const int maxFaceCount = 16384;
 
-        internal static VoxelRenderer Instance { get; private set; }
+        internal static VoxelRenderer sceneRenderer; // Current scene renderer
+#if UNITY_EDITOR
+        internal static VoxelRenderer prefabRenderer; // Prefab preview renderer
+#endif
 
-        [SerializeField] internal ComputeShader cullingShader;
+        [SerializeField] private ComputeShader cullingShader;
         [SerializeField] private float quadsInterleaving = 0.05f; // Remove 1 pixel gaps between triangles
-
-        public float QuadsInterleaving {
-            get => quadsInterleaving;
-            set {
-                quadsInterleaving = value;
-                foreach (Material material in VoxelLayer.Materials) {
-                    material.SetFloat(ShaderID.quadsInterleaving, quadsInterleaving);
-                }
-            }
-        }
 
         internal GraphicsBuffer indicesBuffer { get; private set; } // All 16 bits indices
         internal GraphicsBuffer counterBuffer { get; private set; } // Buffer to store a counter
         internal MeshBuffers meshBuffers { get; private set; } // Global mesh buffers
         internal MeshGenerator generator { get; private set; }
         private readonly Dictionary<Camera, CameraRenderer> renderers = new();
+        private readonly Dictionary<(Material, ShaderParameters), VoxelLayer[]> layers = new();
+
+        public float QuadsInterleaving {
+            get => quadsInterleaving;
+            set {
+                quadsInterleaving = value;
+                foreach (Material material in Materials) {
+                    material.SetFloat(ShaderID.quadsInterleaving, quadsInterleaving);
+                }
+            }
+        }
+
+        public ComputeShader CullingShader {
+            get => cullingShader;
+            set {
+                cullingShader = value;
+                ShaderID.SetKeywords(cullingShader);
+            }
+        }
+
+
+        /// <summary>
+        /// All rendering layers
+        /// </summary>
+        internal IEnumerable<VoxelLayer> Layers {
+            get {
+                foreach (KeyValuePair<(Material, ShaderParameters), VoxelLayer[]> kv in layers) {
+                    for (int layer = 0; layer < 32; layer++) {
+                        if (kv.Value[layer] != null) yield return kv.Value[layer];
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// All materials used by voxel meshes
+        /// </summary>
+        internal IEnumerable<Material> Materials => layers.Keys.Select(k => k.Item1);
+
+
+        /// <summary>
+        /// Get the renderer for an instance
+        /// </summary>
+        /// <param name="instance">The instance</param>
+        /// <returns>The renderer, or null if it shouldn't be rendered</returns>
+        internal static VoxelRenderer GetRenderer(VoxelMesh instance) {
+#if UNITY_EDITOR
+            if (instance.gameObject.scene == SceneManager.GetActiveScene()) return sceneRenderer;
+            else {
+                if (!prefabRenderer) {
+                    return new GameObject("Voxel Renderer") { hideFlags = HideFlags.HideAndDontSave }
+                        .AddComponent<VoxelRenderer>();
+                }
+                return prefabRenderer;
+            }
+#else
+            return sceneRenderer;
+#endif            
+        }
+        
+        
+        /// <summary>
+        /// Get the rendering layer for an instance
+        /// </summary>
+        /// <param name="instance">The instance</param>
+        /// <returns>The rendering layer</returns>
+        internal VoxelLayer GetLayer(VoxelMesh instance) {
+            Material material = instance.material;
+            ShaderParameters parameters = new(instance.parameters.textured, instance.parameters.instanced);
+            int layer = instance.gameObject.layer;
+            if (!layers.TryGetValue((material, parameters), out VoxelLayer[] materialLayers)) {
+                materialLayers = new VoxelLayer[32];
+                layers[(material, parameters)] = materialLayers;
+                material.SetFloat(ShaderID.quadsInterleaving, quadsInterleaving);
+            }
+            if (materialLayers[layer] == null) {
+                materialLayers[layer] = new VoxelLayer(layer, material, parameters, meshBuffers);
+            }
+            return materialLayers[layer];
+        }
+
+
+        /// <summary>
+        /// Get the non-empty rendering layers for all layers in a layer mask and all materials
+        /// </summary>
+        /// <param name="layerMask">The layer mask</param>
+        /// <returns>Enumerable of rendering layers</returns>
+        internal IEnumerable<VoxelLayer> GetLayers(int layerMask) {
+            foreach (KeyValuePair<(Material, ShaderParameters), VoxelLayer[]> kv in layers) {
+                for (int layer = 0; layer < 32; layer++) {
+                    if ((layerMask & (1 << layer)) != 0 && kv.Value[layer] != null && kv.Value[layer].layerBuffers.ChunkCount != 0) {
+                        yield return kv.Value[layer];
+                    }
+                }
+            }
+        }
 
 
         private void OnValidate() {
-            ShaderID.SetKeywords(cullingShader);
+            CullingShader = cullingShader;
             QuadsInterleaving = quadsInterleaving;
         }
 
 
         internal void Awake() {
-            if (Instance) throw new InvalidOperationException("Can't create more than one VoxelRenderer");
-            Instance = this;
+#if UNITY_EDITOR
+            if (gameObject.scene == SceneManager.GetActiveScene()) {
+                if (sceneRenderer) throw new InvalidOperationException("Can't create more than one VoxelRenderer");
+                sceneRenderer = this;
+            }
+            else {
+                if (prefabRenderer) throw new InvalidOperationException("Can't create more than one VoxelRenderer");
+                prefabRenderer = this;
+            }
+            if ((!sceneRenderer || sceneRenderer == this) && (!prefabRenderer || prefabRenderer == this)) {
+                Camera.onPreCull += RenderSwitch;
+            }
+#else
+            if (sceneRenderer) throw new InvalidOperationException("Can't create more than one VoxelRenderer");
+            sceneRenderer = this;
+            Camera.onPreCull += Render;
+#endif
 
             ushort[] indices = new ushort[98304];
             for (int i = 0; i < 16384; i++) {
@@ -57,26 +166,34 @@ namespace Voxels.Rendering {
             counterBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Raw, 1, sizeof(uint));
             meshBuffers = new MeshBuffers();
             generator = new MeshGenerator(meshBuffers);
-
-            if (cullingShader != null) ShaderID.SetKeywords(cullingShader);
-            Camera.onPreCull += Render;
+            if (cullingShader != null) CullingShader = cullingShader;
         }
 
 
         internal void OnDestroy() {
-            Instance = null;
+#if UNITY_EDITOR
+            if (sceneRenderer == this) sceneRenderer = null;
+            if (prefabRenderer == this) prefabRenderer = null;
+            if (!sceneRenderer && !prefabRenderer) Camera.onPreCull -= RenderSwitch;
+#else
+            sceneRenderer = null;
+            Camera.onPreCull -= Render;
+#endif
+
             indicesBuffer.Dispose();
             counterBuffer.Dispose();
             meshBuffers.Dispose();
             generator.Dispose();
             foreach (CameraRenderer renderer in renderers.Values) renderer.Dispose();
-            VoxelLayer.DisposeAll();
-            Camera.onPreCull -= Render;
+            foreach (VoxelLayer layer in Layers) {
+                layer.Dispose();
+            }
+            layers.Clear();
         }
 
 
         private void Update() {
-            foreach (VoxelLayer layer in VoxelLayer.Layers) {
+            foreach (VoxelLayer layer in Layers) {
                 layer.Update();
             }
         }
@@ -85,13 +202,31 @@ namespace Voxels.Rendering {
             generator.Update();
         }
 
+
         private void Render(Camera camera) {
             if (!renderers.TryGetValue(camera, out CameraRenderer renderer)) {
                 renderer = new CameraRenderer(camera);
                 renderers[camera] = renderer;
             }
-            renderer.Render();
+            renderer.Render(this);
         }
+
+#if UNITY_EDITOR
+        private static void RenderSwitch(Camera camera) {
+            if (camera.gameObject.scene == SceneManager.GetActiveScene()) { // Some camera in the scene
+                if (sceneRenderer) sceneRenderer.Render(camera);
+            }
+            else if (!camera.gameObject.scene.IsValid()) { // Scene camera
+                PrefabStage stage = PrefabStageUtility.GetCurrentPrefabStage();
+                if (stage) {
+                    if (prefabRenderer) prefabRenderer.Render(camera);
+                }
+                else {
+                    if (sceneRenderer) sceneRenderer.Render(camera);
+                }
+            }
+        }
+#endif
     }
 
 }

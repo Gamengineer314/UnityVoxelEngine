@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 using Voxels.Collections;
 
@@ -16,7 +17,8 @@ namespace Voxels.Rendering {
             get => command.voxels;
             set {
                 RemoveFromLayer();
-                command = new GenerationCommand(value, parameters);
+                voxelsAsset = null;
+                command.voxels = value;
                 Generate();
             }
         }
@@ -26,7 +28,6 @@ namespace Voxels.Rendering {
             set {
                 RemoveFromLayer();
                 parameters = value;
-                command = new GenerationCommand(command.voxels, parameters);
                 Generate();
             }
         }
@@ -36,31 +37,25 @@ namespace Voxels.Rendering {
             set {
                 RemoveFromLayer();
                 material = value;
-                command = new GenerationCommand(command.voxels, parameters);
                 Generate();
             }
         }
 
-        private void OnValidate() {
+        internal void OnInspectorChanged() {
             RemoveFromLayer();
-            if ((voxelsAsset && voxelsAsset.voxels.IsCreated || command.voxels.IsCreated) && parameters && parameters.chunkSize != 0 && material && VoxelRenderer.Instance) {
-                if (voxelsAsset && voxelsAsset.voxels.IsCreated) command = new GenerationCommand(voxelsAsset.voxels, parameters);
-                Generate();
-            }
-            else command = default;
+            Generate();
         }
 
 
         internal void Start() {
-            if (voxelsAsset && !command.voxels.IsCreated) {
-                command = new GenerationCommand(voxelsAsset.voxels, parameters);
+            if (!command.voxels.IsCreated) {
                 Generate();
             }
         }
 
         private void OnEnable() {
             if (layer != null) {
-                layer = VoxelLayer.GetLayer(this);
+                layer = VoxelRenderer.GetRenderer(this).GetLayer(this);
                 layer.AddInstance(this);
             }
         }
@@ -75,21 +70,25 @@ namespace Voxels.Rendering {
 
 
         private void Generate() {
-            VoxelRenderer.Instance.generator.Schedule(command, parameters.jobHorizontalSize, parameters.asynchronousGeneration, AddToLayer);
+            if ((voxelsAsset || command.voxels.IsCreated) && parameters && material) {
+                command = new GenerationCommand(voxelsAsset ? voxelsAsset.voxels : command.voxels, parameters);
+                VoxelRenderer.GetRenderer(this).generator.Schedule(command, parameters.jobHorizontalSize, parameters.asynchronousGeneration, AddToLayer);
+            }
         }
 
         private void AddToLayer(GenerationCommand command) {
             if (this && layer == null && command.Equals(this.command)) {
-                layer = VoxelLayer.GetLayer(this);
+                VoxelRenderer renderer = VoxelRenderer.GetRenderer(this);
+                layer = renderer.GetLayer(this);
+                renderer.meshBuffers.AddReference(command);
                 if (gameObject.activeSelf) layer.AddInstance(this);
-                VoxelRenderer.Instance.meshBuffers.AddReference(command);
             }
         }
 
         private void RemoveFromLayer() {
             if (layer == null) return;
             if (gameObject.activeSelf) layer.RemoveInstance(this);
-            VoxelRenderer.Instance.meshBuffers.RemoveReference(command);
+            VoxelRenderer.GetRenderer(this).meshBuffers.RemoveReference(command);
             layer = null;
         }
 
@@ -97,7 +96,7 @@ namespace Voxels.Rendering {
         /// <summary>
         /// Complete the generation of this object's mesh
         /// </summary>
-        public void CompleteGeneration() => VoxelRenderer.Instance.generator.Complete(command);
+        public void CompleteGeneration() => VoxelRenderer.GetRenderer(this).generator.Complete(command);
     }
 
 }

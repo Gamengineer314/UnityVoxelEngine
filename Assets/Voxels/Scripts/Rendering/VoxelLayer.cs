@@ -18,16 +18,14 @@ namespace Voxels.Rendering {
         private readonly List<List<VoxelMesh>> instances = new();
         private readonly Dictionary<VoxelMesh, int> instanceIndices = new();
         private readonly Dictionary<GenerationCommand, int> meshIndices = new();
-        
-        private static readonly Dictionary<(Material, ShaderParameters), VoxelLayer[]> layers = new();
 
 
-        public VoxelLayer(int layer, Material material, ShaderParameters parameters) {
+        public VoxelLayer(int layer, Material material, ShaderParameters parameters, MeshBuffers meshBuffers) {
             this.layer = layer;
             this.material = material;
             this.parameters = parameters;
             layerBuffers = new LayerBuffers(parameters);
-            meshBuffers = VoxelRenderer.Instance.meshBuffers;
+            this.meshBuffers = meshBuffers;
             if (!parameters.instanced) instances.Add(new List<VoxelMesh>());
             meshBuffers.bufferCompacted += UpdateChunks;
         }
@@ -35,70 +33,6 @@ namespace Voxels.Rendering {
         public void Dispose() {
             layerBuffers.Dispose();
             meshBuffers.bufferCompacted -= UpdateChunks;
-        }
-
-
-        /// <summary>
-        /// Get the rendering layer for an instance
-        /// </summary>
-        /// <param name="instance">The instance</param>
-        /// <returns>The rendering layer</returns>
-        public static VoxelLayer GetLayer(VoxelMesh instance) {
-            Material material = instance.material;
-            ShaderParameters parameters = new(instance.parameters.textured, instance.parameters.instanced);
-            int layer = instance.gameObject.layer;
-            if (!layers.TryGetValue((material, parameters), out VoxelLayer[] materialLayers)) {
-                materialLayers = new VoxelLayer[32];
-                layers[(material, parameters)] = materialLayers;
-                material.SetFloat(ShaderID.quadsInterleaving, VoxelRenderer.Instance.QuadsInterleaving);
-            }
-            if (materialLayers[layer] == null) {
-                materialLayers[layer] = new VoxelLayer(layer, material, parameters);
-            }
-            return materialLayers[layer];
-        }
-
-        /// <summary>
-        /// Get the non-empty rendering layers for all layers in a layer mask and all materials
-        /// </summary>
-        /// <param name="layerMask">The layer mask</param>
-        /// <returns>Enumerable of rendering layers</returns>
-        public static IEnumerable<VoxelLayer> GetLayers(int layerMask) {
-            foreach (KeyValuePair<(Material, ShaderParameters), VoxelLayer[]> kv in layers) {
-                for (int layer = 0; layer < 32; layer++) {
-                    if ((layerMask & (1 << layer)) != 0 && kv.Value[layer] != null && kv.Value[layer].layerBuffers.ChunkCount != 0) {
-                        yield return kv.Value[layer];
-                    }
-                }
-            }
-        }
-
-        /// <summary>
-        /// All rendering layers
-        /// </summary>
-        public static IEnumerable<VoxelLayer> Layers {
-            get {
-                foreach (KeyValuePair<(Material, ShaderParameters), VoxelLayer[]> kv in layers) {
-                    for (int layer = 0; layer < 32; layer++) {
-                        if (kv.Value[layer] != null) yield return kv.Value[layer];
-                    }
-                }
-            }
-        }
-
-        /// <summary>
-        /// All materials used by voxel meshes
-        /// </summary>
-        public static IEnumerable<Material> Materials => layers.Keys.Select(k => k.Item1);
-
-        /// <summary>
-        /// Dispose all rendering layers
-        /// </summary>
-        public static void DisposeAll() {
-            foreach (VoxelLayer layer in Layers) {
-                layer.Dispose();
-            }
-            layers.Clear();
         }
 
 
@@ -112,7 +46,7 @@ namespace Voxels.Rendering {
                     VoxelMesh instance = meshInstances[j];
                     if (instance.gameObject.layer != layer) {
                         RemoveInstance(instance);
-                        instance.layer = GetLayer(instance);
+                        instance.layer = VoxelRenderer.GetRenderer(instance).GetLayer(instance);
                         instance.layer.AddInstance(instance);
                     }
                     else layerBuffers.UpdateTransform(i, j, instance.transform.localToWorldMatrix);

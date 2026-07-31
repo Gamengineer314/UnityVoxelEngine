@@ -21,11 +21,11 @@ namespace Voxels.Rendering {
             renderers.Clear();
         }
 
-        public void Render() {
-            MeshBuffers meshBuffers = VoxelRenderer.Instance.meshBuffers;
-            foreach (VoxelLayer layer in VoxelLayer.GetLayers(camera.cullingMask)) {
+        public void Render(VoxelRenderer voxelRenderer) {
+            MeshBuffers meshBuffers = voxelRenderer.meshBuffers;
+            foreach (VoxelLayer layer in voxelRenderer.GetLayers(camera.cullingMask)) {
                 if (!renderers.TryGetValue((layer.layer, layer.material), out LayerRenderer renderer)) {
-                    renderer = new LayerRenderer(layer.material, camera, layer.layer, layer.parameters);
+                    renderer = new LayerRenderer(voxelRenderer, layer.material, camera, layer.layer, layer.parameters);
                     renderers[(layer.layer, layer.material)] = renderer;
                 }
                 renderer.SetBuffers(

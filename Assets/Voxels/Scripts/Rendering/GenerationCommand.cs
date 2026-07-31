@@ -6,12 +6,12 @@ namespace Voxels.Rendering {
     /// <summary>
     /// Generation command for the mesh generator
     /// </summary>
-    public readonly struct GenerationCommand {
-        public readonly VoxelColumns voxels;
-        public readonly int chunkSize;
-        public readonly int mergeNormalsThreshold;
-        public readonly bool seenFromAbove;
-        public readonly bool textured;
+    public struct GenerationCommand {
+        public VoxelColumns voxels;
+        public int chunkSize;
+        public int mergeNormalsThreshold;
+        public bool seenFromAbove;
+        public bool textured;
 
         public GenerationCommand(VoxelColumns voxels, int chunkSize, int mergeNormalsThreshold, bool seenFromAbove, bool textured) {
             this.voxels = voxels;

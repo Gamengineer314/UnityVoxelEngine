@@ -6,6 +6,7 @@ namespace Voxels.Rendering {
     /// Voxel renderer for a layer, a shader, and a camera
     /// </summary>
     internal class LayerRenderer {
+        private readonly VoxelRenderer renderer;
         private GraphicsBuffer commandsBuffer;
         private GraphicsBuffer offsetsBuffer;
         private GraphicsBuffer renderedTransformsBuffer;
@@ -15,7 +16,8 @@ namespace Voxels.Rendering {
         private readonly uint[] count = new uint[1];
 
 
-        internal LayerRenderer(Material material, Camera camera, int layer, ShaderParameters parameters) {
+        internal LayerRenderer(VoxelRenderer renderer, Material material, Camera camera, int layer, ShaderParameters parameters) {
+            this.renderer = renderer;
             renderParams = new(material) {
                 camera = camera,
                 layer = layer,
@@ -23,7 +25,7 @@ namespace Voxels.Rendering {
                 matProps = new()
             };
             SetCullingKeywords();
-            VoxelRenderer.Instance.cullingShader.GetKernelThreadGroupSizes(0, out uint size, out _, out _);
+            renderer.CullingShader.GetKernelThreadGroupSizes(0, out uint size, out _, out _);
             cullingGroupSize = (int)size;
             this.parameters = parameters;
         }
@@ -40,7 +42,6 @@ namespace Voxels.Rendering {
         /// Set the buffers used for culling and rendering
         /// </summary>
         internal unsafe void SetBuffers(GraphicsBuffer chunksBuffer, GraphicsBuffer facesBuffer, GraphicsBuffer colorsBuffer, GraphicsBuffer transformsBuffer, int renderedTransformsSize) {
-            ComputeShader cullingShader = VoxelRenderer.Instance.cullingShader;
             renderParams.matProps.SetBuffer(ShaderID.faces, facesBuffer);
             renderParams.matProps.SetBuffer(ShaderID.colors, colorsBuffer);
             if (commandsBuffer == null || chunksBuffer.count != offsetsBuffer.count) { // Create corresponding commands and offsets buffers
@@ -55,6 +56,8 @@ namespace Voxels.Rendering {
                 renderedTransformsBuffer = new(GraphicsBuffer.Target.Structured, renderedTransformsSize, sizeof(Matrix4x4));
                 renderParams.matProps.SetBuffer(ShaderID.renderedTransforms, renderedTransformsBuffer);
             }
+
+            ComputeShader cullingShader = renderer.CullingShader;
             cullingShader.SetBuffer(0, ShaderID.chunks, chunksBuffer);
             cullingShader.SetBuffer(0, ShaderID.commands, commandsBuffer);
             cullingShader.SetBuffer(0, ShaderID.offsets, offsetsBuffer);
@@ -67,8 +70,7 @@ namespace Voxels.Rendering {
         /// Frustum and back-face culling
         /// </summary>
         internal virtual void Cull(int nChunks) {
-            VoxelRenderer renderer = VoxelRenderer.Instance;
-            ComputeShader cullingShader = renderer.cullingShader;
+            ComputeShader cullingShader = renderer.CullingShader;
             Camera camera = renderParams.camera;
             int nGroups = parameters.instanced ? nChunks : Mathf.CeilToInt((float)nChunks / cullingGroupSize);
 
@@ -91,7 +93,7 @@ namespace Voxels.Rendering {
         }
 
         private void SetCullingKeywords() {
-            VoxelRenderer.Instance.cullingShader.SetKeyword(in ShaderID.cullingInstance, parameters.instanced);
+            renderer.CullingShader.SetKeyword(in ShaderID.cullingInstance, parameters.instanced);
         }
 
 
@@ -99,7 +101,7 @@ namespace Voxels.Rendering {
         /// Render the meshes
         /// </summary>
         internal void Render() {
-            Graphics.RenderPrimitivesIndexedIndirect(renderParams, MeshTopology.Triangles, VoxelRenderer.Instance.indicesBuffer, commandsBuffer, (int)count[0]);
+            Graphics.RenderPrimitivesIndexedIndirect(renderParams, MeshTopology.Triangles, renderer.indicesBuffer, commandsBuffer, (int)count[0]);
         }
     }
 }

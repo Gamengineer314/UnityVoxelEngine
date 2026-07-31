@@ -8,10 +8,11 @@ ScriptedImporter:
   assetBundleName: 
   assetBundleVariant: 
   script: {fileID: 11500000, guid: fa1c9c0a2b2e357058a6f42c5216a298, type: 3}
-  plyVoxelSize: 0.1
   offset:
     x: 0
     y: 0
     z: 0
   fillHoles: 1
   removeInside: 1
+  swapVerticalAxis: 1
+  plyVoxelSize: 0.1

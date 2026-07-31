@@ -98,7 +98,6 @@ namespace Voxels.Rendering {
         public void Schedule(GenerationCommand command, int jobHorizontalSize, bool asynchronousGeneration, Action<GenerationCommand> onComplete = null) {
             if (command.chunkSize <= 0 || command.chunkSize > VoxelFace.maxSize)
                 throw new ArgumentException($"Chunk size must be positive and can't exceed {VoxelFace.maxSize}", nameof(command.chunkSize));
-
             if (buffers.ContainsCommand(command)) {
                 onComplete?.Invoke(command);
                 return;

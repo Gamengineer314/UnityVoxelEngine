@@ -1,6 +1,7 @@
 #if UNITY_EDITOR
 using System;
 using System.Collections.Generic;
+using UnityEngine;
 using UnityEditor;
 using Voxels.Rendering;
 
@@ -12,19 +13,19 @@ namespace Voxels.Editor {
 
         static EditorDisposer() {
             AssemblyReloadEvents.beforeAssemblyReload += () => {
-                foreach (VoxelRenderer renderer in UnityEngine.Object.FindObjectsOfType<VoxelRenderer>()) {
-                    if (renderer.isActiveAndEnabled) renderer.OnDestroy();
+                foreach (VoxelRenderer renderer in Resources.FindObjectsOfTypeAll<VoxelRenderer>()) {
+                    if (!EditorUtility.IsPersistent(renderer)) renderer.OnDestroy();
                 }
                 foreach (IDisposable disposable in disposables) {
                     disposable.Dispose();
                 }
             };
             AssemblyReloadEvents.afterAssemblyReload += () => {
-                foreach (VoxelRenderer renderer in UnityEngine.Object.FindObjectsOfType<VoxelRenderer>()) {
-                    if (renderer.isActiveAndEnabled) renderer.Awake();
+                foreach (VoxelRenderer renderer in Resources.FindObjectsOfTypeAll<VoxelRenderer>()) {
+                    if (!EditorUtility.IsPersistent(renderer)) renderer.Awake();
                 }
-                foreach (VoxelMesh mesh in UnityEngine.Object.FindObjectsOfType<VoxelMesh>(true)) {
-                    mesh.Start();
+                foreach (VoxelMesh mesh in Resources.FindObjectsOfTypeAll<VoxelMesh>()) {
+                    if (!EditorUtility.IsPersistent(mesh)) mesh.Start();
                 }
             };
         }
