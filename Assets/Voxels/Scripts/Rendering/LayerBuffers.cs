@@ -248,7 +248,7 @@ namespace Voxels.Rendering {
         
         private void ResizeChunks() {
             BufferUtility.Resize(ref chunksBuffer, arrays.chunks.AsArray());
-            Debug.Log($"[Voxels] Chunks length = {arrays.chunks.Length}, buffer resized to {chunksBuffer.count}");
+            //Debug.Log($"[Voxels] Chunks length = {arrays.chunks.Length}, buffer resized to {chunksBuffer.count}");
         }
 
         private void ResizeTransforms() {
@@ -259,12 +259,12 @@ namespace Voxels.Rendering {
                     BufferUtility.Resize(ref transformsBuffer, arrays.transforms.AsArray());   
                 }
                 else transformsBuffer.SetData(arrays.transforms.AsArray(), 0, 0, arrays.transforms.Length);
-                Debug.Log($"[Voxels] Transforms length = {length}, compacted to {arrays.transforms.Length}, buffer resized to {transformsBuffer.count}");
+                //Debug.Log($"[Voxels] Transforms length = {length}, compacted to {arrays.transforms.Length}, buffer resized to {transformsBuffer.count}");
                 SynchronizeChunks();
             }
             else {
                 BufferUtility.Resize(ref transformsBuffer, arrays.transforms.AsArray());
-                Debug.Log($"[Voxels] Transforms length = {arrays.transforms.Length}, buffer resized to {transformsBuffer.count}");
+                //Debug.Log($"[Voxels] Transforms length = {arrays.transforms.Length}, buffer resized to {transformsBuffer.count}");
             }
         }
 
@@ -272,7 +272,7 @@ namespace Voxels.Rendering {
             int length = arrays.renderedTransformsAllocator.TotalSize;
             CompactRenderedTransforms(ref arrays);
             renderedTransformsSize = BufferUtility.UpdateSize(arrays.renderedTransformsAllocator.TotalSize);
-            Debug.Log($"[Voxels] Rendered transforms length = {length}, compacted to {arrays.renderedTransformsAllocator.TotalSize}, buffer resized to {renderedTransformsSize}");
+            //Debug.Log($"[Voxels] Rendered transforms length = {length}, compacted to {arrays.renderedTransformsAllocator.TotalSize}, buffer resized to {renderedTransformsSize}");
             SynchronizeChunks();
         }
 

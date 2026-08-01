@@ -24,7 +24,7 @@ namespace Voxels.Rendering {
                 worldBounds = new(Vector3.zero, new Vector3(float.MaxValue, float.MaxValue, float.MaxValue)),
                 matProps = new()
             };
-            SetCullingKeywords();
+            renderer.CullingShader.SetKeyword(in ShaderID.cullingInstance, parameters.instanced);
             renderer.CullingShader.GetKernelThreadGroupSizes(0, out uint size, out _, out _);
             cullingGroupSize = (int)size;
             this.parameters = parameters;
@@ -71,18 +71,20 @@ namespace Voxels.Rendering {
         /// </summary>
         internal virtual void Cull(int nChunks) {
             ComputeShader cullingShader = renderer.CullingShader;
-            Camera camera = renderParams.camera;
+            //Camera camera = renderParams.camera;
+            Camera camera = GameObject.FindGameObjectWithTag("MainCamera").GetComponent<Camera>();
             int nGroups = parameters.instanced ? nChunks : Mathf.CeilToInt((float)nChunks / cullingGroupSize);
 
             // Set camera data
-            SetCullingKeywords();
-            cullingShader.SetVector(ShaderID.cameraPosition, camera.transform.position);
+            renderer.CullingShader.SetKeyword(in ShaderID.cullingInstance, parameters.instanced);
+            renderer.CullingShader.SetKeyword(in ShaderID.cullingOrthographic, camera.orthographic);
             Plane[] cameraPlanes = GeometryUtility.CalculateFrustumPlanes(camera);
             cullingShader.SetVector(ShaderID.cameraFarPlane, new Vector4(cameraPlanes[5].normal.x, cameraPlanes[5].normal.y, cameraPlanes[5].normal.z, cameraPlanes[5].distance));
             cullingShader.SetVector(ShaderID.cameraLeftPlane, new Vector4(cameraPlanes[0].normal.x, cameraPlanes[0].normal.y, cameraPlanes[0].normal.z, cameraPlanes[0].distance));
             cullingShader.SetVector(ShaderID.cameraRightPlane, new Vector4(cameraPlanes[1].normal.x, cameraPlanes[1].normal.y, cameraPlanes[1].normal.z, cameraPlanes[1].distance));
             cullingShader.SetVector(ShaderID.cameraDownPlane, new Vector4(cameraPlanes[2].normal.x, cameraPlanes[2].normal.y, cameraPlanes[2].normal.z, cameraPlanes[2].distance));
             cullingShader.SetVector(ShaderID.cameraUpPlane, new Vector4(cameraPlanes[3].normal.x, cameraPlanes[3].normal.y, cameraPlanes[3].normal.z, cameraPlanes[3].distance));
+            if (!camera.orthographic) cullingShader.SetVector(ShaderID.cameraPosition, camera.transform.position);
             if (!parameters.instanced) cullingShader.SetInt(ShaderID.nChunks, nChunks);
 
             // Frustum culling
@@ -90,10 +92,6 @@ namespace Voxels.Rendering {
             cullingShader.Dispatch(0, nGroups, 1, 1);
             GraphicsBuffer.CopyCount(offsetsBuffer, renderer.counterBuffer, 0);
             renderer.counterBuffer.GetData(count);
-        }
-
-        private void SetCullingKeywords() {
-            renderer.CullingShader.SetKeyword(in ShaderID.cullingInstance, parameters.instanced);
         }
 
 

@@ -169,7 +169,7 @@ namespace Voxels.Rendering {
             }
             else facesBuffer.SetData(faces.AsArray(), 0, 0, faces.Length);
             bufferCompacted?.Invoke();
-            Debug.Log($"[Voxels] Faces length = {length}, compacted to {faces.Length}, buffer resized to {facesBuffer.count}");
+            //Debug.Log($"[Voxels] Faces length = {length}, compacted to {faces.Length}, buffer resized to {facesBuffer.count}");
         }
 
         private void ResizeColors() {
@@ -180,7 +180,7 @@ namespace Voxels.Rendering {
             }
             else colorsBuffer.SetData(colors.AsArray(), 0, 0, colors.Length);
             bufferCompacted?.Invoke();
-            Debug.Log($"[Voxels] Colors length = {length}, compacted to {colors.Length}, buffer resized to {colorsBuffer.count}");
+            //Debug.Log($"[Voxels] Colors length = {length}, compacted to {colors.Length}, buffer resized to {colorsBuffer.count}");
         }
 
         [BurstCompile]

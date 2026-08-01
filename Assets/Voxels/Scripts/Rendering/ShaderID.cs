@@ -23,9 +23,11 @@ namespace Voxels.Rendering {
         public static readonly int transforms = Shader.PropertyToID("transforms");
         public static readonly int renderedTransforms = Shader.PropertyToID("renderedTransforms");
         public static LocalKeyword cullingInstance;
+        public static LocalKeyword cullingOrthographic;
 
         public static void SetKeywords(ComputeShader cullingShader) {
             cullingInstance = new LocalKeyword(cullingShader, "VOXEL_INSTANCE");
+            cullingOrthographic = new LocalKeyword(cullingShader, "VOXEL_ORTHOGRAPHIC");
         }
     }
 
