@@ -9,8 +9,9 @@ ScriptedImporter:
   assetBundleVariant: 
   script: {fileID: 11500000, guid: 4d88925067f6b15888e45a5be35a5c5f, type: 3}
   offset:
-    x: 0
-    y: 0
-    z: 0
+    x: -38
+    y: -14
+    z: -38
   fillHoles: 1
   removeInside: 1
+  swapVerticalAxis: 1

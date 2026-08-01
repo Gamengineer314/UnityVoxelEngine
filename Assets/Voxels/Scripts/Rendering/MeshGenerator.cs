@@ -523,7 +523,7 @@ namespace Voxels.Rendering {
 
                     if (faceCount > 0) {
                         data.chunks.Add(new VoxelChunk(
-                            voxels.offset + (float3)(max + min) / 2f, voxels.offset + (float3)(max - min) / 2f, voxels.offset + currentChunkStart,
+                            voxels.offset + (float3)(max + min) / 2f, (float3)(max - min) / 2f, voxels.offset + currentChunkStart,
                             startColor, chunkNormal, startFace, faceCount, 0, 0, 0
                         ));
                         startFace += faceCount;

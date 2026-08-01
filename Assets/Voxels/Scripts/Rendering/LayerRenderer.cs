@@ -71,8 +71,7 @@ namespace Voxels.Rendering {
         /// </summary>
         internal virtual void Cull(int nChunks) {
             ComputeShader cullingShader = renderer.CullingShader;
-            //Camera camera = renderParams.camera;
-            Camera camera = GameObject.FindGameObjectWithTag("MainCamera").GetComponent<Camera>();
+            Camera camera = renderParams.camera;
             int nGroups = parameters.instanced ? nChunks : Mathf.CeilToInt((float)nChunks / cullingGroupSize);
 
             // Set camera data
