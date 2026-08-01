@@ -25,6 +25,7 @@ public class WorldManager : MonoBehaviour {
         watch.Restart();
         terrain.Voxels = voxels;
         terrain.CompleteGeneration();
+        terrainGenerator.InstantiateTrees();
         
         Debug.Log($"Mesh generated in {watch.ElapsedMilliseconds} ms");
     }
