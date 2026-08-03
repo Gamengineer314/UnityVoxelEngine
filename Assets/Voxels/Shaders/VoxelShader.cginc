@@ -29,10 +29,10 @@ uniform float quadsInterleaving; // Remove 1 pixel gaps between triangles
 // Unpacked data
 struct VoxelData {
     float3 position; // World position
-    uint normalID; // Face normal
     uint width; // Face size
     uint height;
     uint lightLevel;
+    float3 normal;
     float3 tangent1;
     float3 tangent2;
 #ifdef _VOXEL_TEXTURE_ON
@@ -78,6 +78,7 @@ VoxelData unpackVertex(uint vertexID: SV_VertexID, uint instanceID: SV_InstanceI
     uint normalAxis = NORMAL_AXIS(normalID);
     uint widthAxis = AXIS_WIDTH(normalAxis);
     uint heightAxis = AXIS_HEIGHT(normalAxis);
+    float3 normal = getNormal(normalID);
 
     // Position
     uint vertexID1 = vertexID & 1u;
@@ -102,15 +103,16 @@ VoxelData unpackVertex(uint vertexID: SV_VertexID, uint instanceID: SV_InstanceI
     // Transform
     float4x4 transform = renderedTransforms[instanceID];
     position = mul(transform, float4(position, 1)).xyz;
+    normal = mul(transform, float4(normal, 0)).xyz;
     tangent1 = mul(transform, float4(tangent1, 0)).xyz;
     tangent2 = mul(transform, float4(tangent2, 0)).xyz;
 
     VoxelData o;
     o.position = position;
-    o.normalID = normalID;
     o.width = width;
     o.height = height;
     o.lightLevel = lightLevels[normalID];
+    o.normal = normal;
     o.tangent1 = tangent1;
     o.tangent2 = tangent2;
 #ifdef _VOXEL_TEXTURE_ON
