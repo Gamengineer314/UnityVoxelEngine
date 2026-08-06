@@ -231,10 +231,10 @@ namespace Voxels.Rendering {
                         int chunkEndX = math.min(currentChunkStart.x + chunkSize, startX + sizeX);
                         int nSubChunksX = (int)math.ceil((float)(chunkEndX - currentChunkStart.x) / subChunkSize);
                         int2 yRange = yRanges[chunkX, chunkZ];
-                        int nChunksY = (int)math.ceil((float)(yRange.y - yRange.x) / chunkSize);
+                        int nChunksY = (int)math.ceil((float)(yRange.y - yRange.x + 1) / chunkSize);
                         for (int chunkY = 0; chunkY < nChunksY; chunkY++) {
                             currentChunkStart.y = yRange.x + chunkY * chunkSize;
-                            int chunkEndY = math.min(currentChunkStart.y + chunkSize, yRange.y);
+                            int chunkEndY = math.min(currentChunkStart.y + chunkSize, yRange.y + 1);
                             int nSubChunksY = (int)math.ceil((float)(chunkEndY - currentChunkStart.y) / subChunkSize);
 
                             // Generate all chunks
@@ -294,6 +294,7 @@ namespace Voxels.Rendering {
                             else if (y == -1) ySide.x = true;
                             else if (y == subChunkSize) ySide.y = true;
                         }
+                        sides[x + z * subChunkSize + subChunkSize * subChunkSize] = ySide;
                     }
                 }
 
