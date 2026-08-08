@@ -189,7 +189,7 @@ namespace Voxels.Collections {
                     if (z > 0) minNeighbor = math.min(minNeighbor, map[x, z - 1].y);
                     if (z < map.sizeY - 1) minNeighbor = math.min(minNeighbor, map[x, z + 1].y);
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
-                    if (maxY < 0 || maxY > ushort.MaxValue || minNeighbor < 0 || minNeighbor > ushort.MaxValue)
+                    if (maxY < 0 || maxY > ushort.MaxValue || minNeighbor + 1 < 0 || minNeighbor + 1 > ushort.MaxValue)
                         throw new ArgumentOutOfRangeException($"Height must be between 0 and {ushort.MaxValue}");
 #endif
 
