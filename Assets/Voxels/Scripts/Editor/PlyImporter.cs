@@ -35,7 +35,8 @@ namespace Voxels.Editor {
             // Read vertices
             int3[] vertices = new int3[verticesCount];
             Color32[] vertexColors = new Color32[verticesCount];
-            int3 min = 0, max = 0;
+            int3 min = int.MaxValue;
+            int3 max = int.MinValue;
             for (int i = 0; i < verticesCount; i++) {
                 string[] words = reader.ReadLine().Split(' ');
                 vertices[i] = (int3)math.round(new float3(

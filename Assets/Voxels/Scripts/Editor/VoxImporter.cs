@@ -45,9 +45,9 @@ namespace Voxels.Editor {
                 throw new InvalidDataException($"Missing 'SIZE' chunk");
             reader.ReadInt32();
             reader.ReadInt32();
-            int sizeX = reader.ReadInt32();
-            int sizeY = reader.ReadInt32();
-            int sizeZ = reader.ReadInt32();
+            reader.ReadInt32();
+            reader.ReadInt32();
+            reader.ReadInt32();
 
             // XYZI chunk
             if (Encoding.ASCII.GetString(reader.ReadBytes(4)) != "XYZI")
@@ -56,12 +56,16 @@ namespace Voxels.Editor {
             reader.ReadInt32();
             int voxelCount = reader.ReadInt32();
             int4[] indices = new int4[voxelCount];
+            int3 min = int.MaxValue;
+            int3 max = int.MinValue;
             for (int i = 0; i < voxelCount; i++) {
                 byte x = reader.ReadByte();
                 byte y = reader.ReadByte();
                 byte z = reader.ReadByte();
                 byte colorIndex = reader.ReadByte();
                 indices[i] = new(x, y, z, colorIndex);
+                min = math.min(min, indices[i].xyz);
+                max = math.max(max, indices[i].xyz);
             }
 
             // Optional RGBA chunk
@@ -81,9 +85,9 @@ namespace Voxels.Editor {
             }
 
             // Fill array
-            Native3DArray<Color32> colors = new(sizeX, sizeY, sizeZ, Allocator.Persistent);
+            Native3DArray<Color32> colors = new(max.x - min.x + 1, max.y - min.y + 1, max.z - min.z + 1, Allocator.Persistent);
             foreach (int4 index in indices) {
-                colors[index.x, index.y, index.z] = palette[index.w];
+                colors[index.xyz - min] = palette[index.w];
             }
             return colors;
         }

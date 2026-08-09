@@ -194,7 +194,7 @@ namespace Voxels.Rendering {
         }
 
 
-        internal void Update() {
+        private void Update() {
             foreach (VoxelLayer layer in Layers) {
                 layer.Update();
             }

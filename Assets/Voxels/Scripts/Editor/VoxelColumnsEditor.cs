@@ -8,11 +8,11 @@ using Voxels.Rendering;
 
 namespace Voxels.Editor {
     
+    // Adapted from :
+    // https://github.com/Unity-Technologies/UnityCsReference/blob/master/Editor/Mono/Inspector/GameObjectInspector.cs
     [CustomEditor(typeof(VoxelColumnsAsset))]
     public class VoxelColumnsEditor : UnityEditor.Editor {
         private PreviewRenderUtility preview;
-        private VoxelRenderer renderer;
-        private Transform meshTransform;
         private Bounds meshBounds;
         private Vector2 previewDir;
 
@@ -30,15 +30,11 @@ namespace Voxels.Editor {
             }
             Vector3 size = new(voxels.sizeX, maxY - minY + 1, voxels.sizeZ);
             meshBounds = new Bounds((Vector3)voxels.offset + size / 2, size);
-            previewDir = new Vector2(130, -20);
+            previewDir = new Vector2(300, -20);
 
             preview = new PreviewRenderUtility();
-            GameObject rendererObject = new("Renderer") { hideFlags = HideFlags.HideAndDontSave };
-            SceneManager.MoveGameObjectToScene(rendererObject, preview.camera.gameObject.scene);
-            renderer = rendererObject.AddComponent<VoxelRenderer>();
             GameObject voxelsObject = new("Voxels") { hideFlags = HideFlags.HideAndDontSave };
             SceneManager.MoveGameObjectToScene(voxelsObject, preview.camera.gameObject.scene);
-            meshTransform = voxelsObject.transform;
 
             VoxelMesh mesh = voxelsObject.AddComponent<VoxelMesh>();
             mesh.voxelsAsset = voxelsAsset;
@@ -79,11 +75,9 @@ namespace Voxels.Editor {
             preview.camera.nearClipPlane = 1.35f * size;
             preview.camera.farClipPlane = 2.45f * size;
             preview.camera.fieldOfView = 30;
-            preview.camera.transform.SetPositionAndRotation(-Vector3.forward * (1.9f * size), Quaternion.identity);
-            Quaternion rotation = Quaternion.Euler(previewDir.y, 0, 0) * Quaternion.Euler(0, previewDir.x, 0);
-            Vector3 position = rotation * (-meshBounds.center);
-            meshTransform.SetPositionAndRotation(position, rotation);
-            renderer.Update();
+            Quaternion rotation = Quaternion.Euler(-previewDir.y, -previewDir.x, 0);
+            Vector3 position = meshBounds.center - rotation * (Vector3.forward * (1.9f * size));
+            preview.camera.transform.SetPositionAndRotation(position, rotation);
             preview.Render();
         }
 
