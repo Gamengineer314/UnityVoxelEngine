@@ -18,7 +18,7 @@ namespace Voxels.Rendering {
 
         internal static VoxelRenderer sceneRenderer; // Current scene renderer
 #if UNITY_EDITOR
-        internal static VoxelRenderer prefabRenderer; // Prefab preview renderer
+        internal static Dictionary<Scene, VoxelRenderer> previewRenderers = new(); // Prefab and asset preview renderers
 #endif
 
         [SerializeField] private ComputeShader cullingShader;
@@ -76,13 +76,14 @@ namespace Voxels.Rendering {
         /// <returns>The renderer, or null if it shouldn't be rendered</returns>
         internal static VoxelRenderer GetRenderer(VoxelMesh instance) {
 #if UNITY_EDITOR
-            if (instance.gameObject.scene == SceneManager.GetActiveScene()) return sceneRenderer;
+            Scene scene = instance.gameObject.scene;
+            if (scene == SceneManager.GetActiveScene()) return sceneRenderer;
             else {
-                if (!prefabRenderer) {
-                    return new GameObject("Voxel Renderer") { hideFlags = HideFlags.HideAndDontSave }
-                        .AddComponent<VoxelRenderer>();
-                }
-                return prefabRenderer;
+                if (previewRenderers.TryGetValue(scene, out VoxelRenderer renderer)) return renderer;
+                GameObject rendererObject = new("Voxel Renderer") { hideFlags = HideFlags.HideAndDontSave };
+                SceneManager.MoveGameObjectToScene(rendererObject, scene);
+                renderer = rendererObject.AddComponent<VoxelRenderer>();
+                return renderer;
             }
 #else
             return sceneRenderer;
@@ -136,14 +137,14 @@ namespace Voxels.Rendering {
         internal void Awake() {
 #if UNITY_EDITOR
             if (gameObject.scene == SceneManager.GetActiveScene()) {
-                if (sceneRenderer) throw new InvalidOperationException("Can't create more than one VoxelRenderer");
+                if (sceneRenderer) throw new InvalidOperationException("Can't create more than one VoxelRenderer in a scene");
                 sceneRenderer = this;
             }
             else {
-                if (prefabRenderer) throw new InvalidOperationException("Can't create more than one VoxelRenderer");
-                prefabRenderer = this;
+                if (previewRenderers.ContainsKey(gameObject.scene)) throw new InvalidOperationException("Can't create more than one VoxelRenderer in a scene");
+                previewRenderers[gameObject.scene] = this;
             }
-            if ((!sceneRenderer || sceneRenderer == this) && (!prefabRenderer || prefabRenderer == this)) {
+            if ((!sceneRenderer || sceneRenderer == this) && (previewRenderers.Count == 0 || previewRenderers.Count == 1 && previewRenderers.Values.First() == this)) {
                 Camera.onPreCull += RenderSwitch;
             }
 #else
@@ -172,9 +173,10 @@ namespace Voxels.Rendering {
 
         internal void OnDestroy() {
 #if UNITY_EDITOR
+            if (!meshBuffers.IsCreated) return; // Avoid destroying twice when the renderer is destroyed after beforeAssemblyReload
             if (sceneRenderer == this) sceneRenderer = null;
-            if (prefabRenderer == this) prefabRenderer = null;
-            if (!sceneRenderer && !prefabRenderer) Camera.onPreCull -= RenderSwitch;
+            else previewRenderers.Remove(gameObject.scene);
+            if (!sceneRenderer && previewRenderers.Count == 0) Camera.onPreCull -= RenderSwitch;
 #else
             sceneRenderer = null;
             Camera.onPreCull -= Render;
@@ -192,7 +194,7 @@ namespace Voxels.Rendering {
         }
 
 
-        private void Update() {
+        internal void Update() {
             foreach (VoxelLayer layer in Layers) {
                 layer.Update();
             }
@@ -218,12 +220,17 @@ namespace Voxels.Rendering {
             }
             else if (!camera.gameObject.scene.IsValid()) { // Scene camera
                 PrefabStage stage = PrefabStageUtility.GetCurrentPrefabStage();
-                if (stage) {
-                    if (prefabRenderer) prefabRenderer.Render(camera);
+                if (stage) { // Prefab scene
+                    if (previewRenderers.TryGetValue(stage.scene, out VoxelRenderer renderer)) {
+                        renderer.Render(camera);
+                    }
                 }
-                else {
+                else { // Main scene
                     if (sceneRenderer) sceneRenderer.Render(camera);
                 }
+            }
+            else if (previewRenderers.TryGetValue(camera.gameObject.scene, out VoxelRenderer renderer)) { // Asset preview camera
+                renderer.Render(camera);
             }
         }
 #endif

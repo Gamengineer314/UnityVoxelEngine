@@ -25,6 +25,8 @@ namespace Voxels.Rendering {
         private readonly Dictionary<GenerationCommand, NativeList<VoxelChunk>> chunks = new();
         private readonly Dictionary<GenerationCommand, int> referenceCounters = new();
 
+        public bool IsCreated => faces.IsCreated;
+
 
         public unsafe MeshBuffers() {
             facesBuffer = new(GraphicsBuffer.Target.Structured, BufferUtility.minLength, sizeof(VoxelFace));

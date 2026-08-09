@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 using UnityEditor;
 using Voxels.Rendering;
 
@@ -15,6 +16,11 @@ namespace Voxels.Editor {
             AssemblyReloadEvents.beforeAssemblyReload += () => {
                 foreach (VoxelRenderer renderer in Resources.FindObjectsOfTypeAll<VoxelRenderer>()) {
                     if (!EditorUtility.IsPersistent(renderer)) renderer.OnDestroy();
+                }
+                foreach (VoxelMesh mesh in Resources.FindObjectsOfTypeAll<VoxelMesh>()) {
+                    if (!EditorUtility.IsPersistent(mesh)) {
+                        mesh.generated = false;
+                    }
                 }
                 foreach (IDisposable disposable in disposables) {
                     disposable.Dispose();

@@ -11,6 +11,7 @@ namespace Voxels.Rendering {
         [SerializeField] internal Material material;
         internal VoxelLayer layer;
         internal GenerationCommand command;
+        public bool generated { get; internal set; }
 
 
         public VoxelColumns Voxels {
@@ -54,14 +55,17 @@ namespace Voxels.Rendering {
         }
 
         private void OnEnable() {
-            if (layer != null) {
+            if (generated) {
                 layer = VoxelRenderer.GetRenderer(this).GetLayer(this);
                 layer.AddInstance(this);
             }
         }
 
         private void OnDisable() {
-            if (layer != null && layer.layerBuffers.IsCreated) layer.RemoveInstance(this);
+            if (layer != null && layer.layerBuffers.IsCreated) {
+                layer.RemoveInstance(this);
+                layer = null;
+            }
         }
 
         private void OnDestroy() {
@@ -69,7 +73,7 @@ namespace Voxels.Rendering {
         }
 
 
-        private void Generate() {
+        internal void Generate() {
             if ((voxelsAsset || command.voxels.IsCreated) && parameters && material) {
                 command = new GenerationCommand(voxelsAsset ? voxelsAsset.voxels : command.voxels, parameters);
                 VoxelRenderer.GetRenderer(this).generator.Schedule(command, parameters.jobHorizontalSize, parameters.asynchronousGeneration, AddToLayer);
@@ -77,19 +81,22 @@ namespace Voxels.Rendering {
         }
 
         private void AddToLayer(GenerationCommand command) {
-            if (this && layer == null && command.Equals(this.command)) {
+            if (this && isActiveAndEnabled && layer == null && command.Equals(this.command)) {
                 VoxelRenderer renderer = VoxelRenderer.GetRenderer(this);
                 layer = renderer.GetLayer(this);
+                layer.AddInstance(this);
                 renderer.meshBuffers.AddReference(command);
-                if (gameObject.activeSelf) layer.AddInstance(this);
+                generated = true;
             }
         }
 
         private void RemoveFromLayer() {
-            if (layer == null) return;
-            if (gameObject.activeSelf) layer.RemoveInstance(this);
-            VoxelRenderer.GetRenderer(this).meshBuffers.RemoveReference(command);
-            layer = null;
+            if (layer != null) {
+                layer.RemoveInstance(this);
+                layer = null;
+                VoxelRenderer.GetRenderer(this).meshBuffers.RemoveReference(command);
+                generated = false;
+            }
         }
 
 
