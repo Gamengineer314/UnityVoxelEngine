@@ -15,15 +15,14 @@ namespace Voxels.Collections {
     /// </summary>
     [BurstCompile]
     public readonly unsafe struct VoxelColumns : IDisposable {
-        public readonly int sizeX, sizeZ; // Size in the x and z dimensions
+        public readonly int3 size;
         public readonly float3 offset; // Position offset
         internal readonly NativeArray<Column> columns; // All columns
         internal readonly NativeArray<int> startIndices; // [sizeX * sizeZ + 1] sized array giving the start index of each column
 
 
-        internal VoxelColumns(int sizeX, int sizeZ, float3 offset, NativeArray<Column> columns, NativeArray<int> startIndices) {
-            this.sizeX = sizeX;
-            this.sizeZ = sizeZ;
+        internal VoxelColumns(int3 size, float3 offset, NativeArray<Column> columns, NativeArray<int> startIndices) {
+            this.size = size;
             this.offset = offset;
             this.columns = columns;
             this.startIndices = startIndices;
@@ -37,10 +36,13 @@ namespace Voxels.Collections {
             byte[] array = File.ReadAllBytes(path);
             NativeArray<byte> nativeArray = new(array, Allocator.Persistent);
             int start = 0;
-            sizeX = BitConverter.ToInt32(array, start);
-            sizeZ = BitConverter.ToInt32(array, start + sizeof(int));
-            int nVoxels = BitConverter.ToInt32(array, start + 2 * sizeof(int));
-            start += 3 * sizeof(int);
+            size = new int3(
+                BitConverter.ToInt32(array, start),
+                BitConverter.ToInt32(array, start + sizeof(int)),
+                BitConverter.ToInt32(array, start + 2 * sizeof(int))
+            );
+            int nVoxels = BitConverter.ToInt32(array, start + 3 * sizeof(int));
+            start += 4 * sizeof(int);
             offset = new float3(
                 BitConverter.ToSingle(array, start),
                 BitConverter.ToSingle(array, start + sizeof(float)),
@@ -49,7 +51,7 @@ namespace Voxels.Collections {
             start += 3 * sizeof(float);
             columns = nativeArray.GetSubArray(start, nVoxels * sizeof(Column)).Reinterpret<Column>(1);
             offset += nVoxels * sizeof(Column);
-            startIndices = nativeArray.GetSubArray(start, (sizeX * sizeZ + 1) * sizeof(int)).Reinterpret<int>(1);
+            startIndices = nativeArray.GetSubArray(start, (size.x * size.z + 1) * sizeof(int)).Reinterpret<int>(1);
         }
 
         /// <summary>
@@ -58,10 +60,9 @@ namespace Voxels.Collections {
         /// <param name="map">Highest voxel in each column</param>
         /// <param name="offset">Position offset</param>
         public VoxelColumns(Native2DArray<Voxel> map, float3 offset) {
-            sizeX = map.sizeX;
-            sizeZ = map.sizeY;
-            this.offset = offset;
-            FromHeightMap(in map, out columns, out startIndices);
+            FromHeightMap(in map, out columns, out startIndices, out int sizeY, out int offsetY);
+            size = new int3(map.size.x, sizeY, map.size.y);
+            this.offset = new float3(offset.x, offset.y + offsetY, offset.z);
         }
 
         /// <summary>
@@ -70,8 +71,7 @@ namespace Voxels.Collections {
         /// <param name="colors">Color of each voxel</param>
         /// <param name="offset">Position offset</param>
         public VoxelColumns(Native3DArray<Color32> colors, float3 offset) {
-            sizeX = colors.sizeX;
-            sizeZ = colors.sizeZ;
+            size = colors.size;
             this.offset = offset;
             FromColorArray(in colors, out columns, out startIndices);
         }
@@ -93,12 +93,12 @@ namespace Voxels.Collections {
         /// <param name="z">z coordinate of the voxel</param>
         /// <returns>Color of the voxel if found, default otherwise</returns>
         public Color32 GetVoxel(int x, int y, int z) {
-            int start = startIndices[x + sizeX * z];
-            int len = startIndices[x + sizeX * z + 1] - start;
+            int start = startIndices[x + size.x * z];
+            int len = startIndices[x + size.x * z + 1] - start;
             while (len > 1) {
                 int half = len >> 1;
                 int middle = start + half;
-                if (columns[middle].start > y) {
+                if (columns[middle].min > y) {
                     len = half;
                 }
                 else {
@@ -107,7 +107,7 @@ namespace Voxels.Collections {
                 }
             }
             Column column = columns[start];
-            return column.start <= y && column.start + column.height > y ? column.color : default;
+            return column.min <= y && column.Max >= y ? column.color : default;
         }
 
         public Color32 GetVoxel(int3 coords) => GetVoxel(coords.x, coords.y, coords.z);
@@ -120,8 +120,8 @@ namespace Voxels.Collections {
         /// <param name="z">z coordinate of the column</param>
         /// <returns>Enumerable of voxels</returns>
         public Enumerable<Voxel, Enumerator> GetColumn(int x, int z) {
-            int start = startIndices[x + sizeX * z];
-            int length = startIndices[x + sizeX * z + 1] - start;
+            int start = startIndices[x + size.x * z];
+            int length = startIndices[x + size.x * z + 1] - start;
             return new(new(columns.GetSubArray(start, length)));
         }
 
@@ -135,8 +135,8 @@ namespace Voxels.Collections {
         /// <param name="z">z coordinate of the column</param>
         /// <returns>y coordinate of the voxel, int.MaxValue if no voxels in this column</returns>
         public int GetMin(int x, int z) {
-            if (startIndices[x + sizeX * z] == startIndices[x + sizeX * z + 1]) return int.MaxValue;
-            return columns[startIndices[x + sizeX * z]].start;
+            if (startIndices[x + size.x * z] == startIndices[x + size.x * z + 1]) return int.MaxValue;
+            return columns[startIndices[x + size.x * z]].min;
         }
 
         public int GetMin(int2 coords) => GetMin(coords.x, coords.y);
@@ -149,9 +149,8 @@ namespace Voxels.Collections {
         /// <param name="z">z coordinate of the column</param>
         /// <returns>y coordinate of the voxel, int.MinValue if no voxels in this column</returns>
         public int GetMax(int x, int z) {
-            if (startIndices[x + sizeX * z] == startIndices[x + sizeX * z + 1]) return int.MinValue;
-            Column column = columns[startIndices[x + sizeX * z + 1] - 1];
-            return column.start + column.height - 1;
+            if (startIndices[x + size.x * z] == startIndices[x + size.x * z + 1]) return int.MinValue;
+            return columns[startIndices[x + size.x * z + 1] - 1].Max;
         }
 
         public int GetMax(int2 coords) => GetMax(coords.x, coords.y);
@@ -163,8 +162,9 @@ namespace Voxels.Collections {
         /// <param name="filePath">Path to the file</param>
         public void Write(string filePath) {
             using FileStream file = File.Create(filePath);
-            file.Write(BitConverter.GetBytes(sizeX));
-            file.Write(BitConverter.GetBytes(sizeZ));
+            file.Write(BitConverter.GetBytes(size.x));
+            file.Write(BitConverter.GetBytes(size.y));
+            file.Write(BitConverter.GetBytes(size.z));
             file.Write(BitConverter.GetBytes(columns.Length));
             file.Write(BitConverter.GetBytes(offset.x));
             file.Write(BitConverter.GetBytes(offset.y));
@@ -175,30 +175,44 @@ namespace Voxels.Collections {
 
 
         [BurstCompile]
-        private static void FromHeightMap(in Native2DArray<Voxel> map, out NativeArray<Column> columns, out NativeArray<int> startIndices) {
+        private static void FromHeightMap(in Native2DArray<Voxel> map, out NativeArray<Column> columns, out NativeArray<int> startIndices, out int sizeY, out int offsetY) {
             NativeList<Column> columnsList = new(Allocator.Temp);
-            startIndices = new(map.sizeX * map.sizeY + 1, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+            startIndices = new(map.size.x * map.size.y + 1, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
 
-            for (int z = 0; z < map.sizeY; z++) {
-                for (int x = 0; x < map.sizeX; x++) {
+            // Find y bounds
+            int min = int.MaxValue;
+            int max = int.MinValue;
+            for (int z = 0; z < map.size.y; z++) {
+                for (int x = 0; x < map.size.x; x++) {
+                    min = math.min(min, map[x, z].y);
+                    max = math.max(max, map[x, z].y);
+                }
+            }
+            sizeY = max - min + 1;
+            offsetY = min;
+
+            for (int z = 0; z < map.size.y; z++) {
+                for (int x = 0; x < map.size.x; x++) {
                     // Find lowest highest voxel in neighbor columns
                     int maxY = map[x, z].y;
                     int minNeighbor = maxY - 1;
                     if (x > 0) minNeighbor = math.min(minNeighbor, map[x - 1, z].y);
-                    if (x < map.sizeX - 1) minNeighbor = math.min(minNeighbor, map[x + 1, z].y);
+                    if (x < map.size.x - 1) minNeighbor = math.min(minNeighbor, map[x + 1, z].y);
                     if (z > 0) minNeighbor = math.min(minNeighbor, map[x, z - 1].y);
-                    if (z < map.sizeY - 1) minNeighbor = math.min(minNeighbor, map[x, z + 1].y);
+                    if (z < map.size.y - 1) minNeighbor = math.min(minNeighbor, map[x, z + 1].y);
+                    maxY -= offsetY;
+                    minNeighbor -= offsetY;
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
                     if (maxY < 0 || maxY > ushort.MaxValue || minNeighbor + 1 < 0 || minNeighbor + 1 > ushort.MaxValue)
                         throw new ArgumentOutOfRangeException($"Height must be between 0 and {ushort.MaxValue}");
 #endif
 
                     // Add voxels
-                    startIndices[x + map.sizeX * z] = columnsList.Length;
+                    startIndices[x + map.size.x * z] = columnsList.Length;
                     columnsList.Add(new Column((ushort)(minNeighbor + 1), (ushort)(maxY - minNeighbor), map[x, z].color));
                 }
             }
-            startIndices[map.sizeX * map.sizeY] = columnsList.Length;
+            startIndices[map.size.x * map.size.y] = columnsList.Length;
 
             columns = columnsList.ToArray(Allocator.Persistent);
             columnsList.Dispose();
@@ -208,30 +222,30 @@ namespace Voxels.Collections {
         [BurstCompile]
         private static void FromColorArray(in Native3DArray<Color32> colors, out NativeArray<Column> columns, out NativeArray<int> startIndices) {
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
-            if (colors.sizeY > ushort.MaxValue)
+            if (colors.size.y > ushort.MaxValue)
                 throw new ArgumentOutOfRangeException($"Y size must be between 0 and {ushort.MaxValue}");
 #endif
             NativeList<Column> columnsList = new(Allocator.Temp);
-            startIndices = new(colors.sizeX * colors.sizeZ + 1, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+            startIndices = new(colors.size.x * colors.size.z + 1, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
 
-            for (int z = 0; z < colors.sizeZ; z++) {
-                for (int x = 0; x < colors.sizeX; x++) {
-                    startIndices[x + colors.sizeX * z] = columnsList.Length;
+            for (int z = 0; z < colors.size.z; z++) {
+                for (int x = 0; x < colors.size.x; x++) {
+                    startIndices[x + colors.size.x * z] = columnsList.Length;
                     int start = 0;
-                    for (int y = 0; y < colors.sizeY; y++) {
+                    for (int y = 0; y < colors.size.y; y++) {
                         Color32 color = colors[x, y, z];
                         if (Voxel.Color32Equals(color, default)) {
                             start = y + 1;
                             continue;
                         }
-                        if (y + 1 == colors.sizeY || !Voxel.Color32Equals(color, colors[x, y + 1, z])) {
+                        if (y + 1 == colors.size.y || !Voxel.Color32Equals(color, colors[x, y + 1, z])) {
                             columnsList.Add(new Column((ushort)start, (ushort)(y - start + 1), color));
                             start = y + 1;
                         }
                     }
                 }
             }
-            startIndices[colors.sizeX * colors.sizeZ] = columnsList.Length;
+            startIndices[colors.size.x * colors.size.z] = columnsList.Length;
 
             columns = columnsList.ToArray(Allocator.Persistent);
             columnsList.Dispose();
@@ -243,12 +257,14 @@ namespace Voxels.Collections {
         /// </summary>
         [Serializable]
         internal struct Column {
-            public ushort start;
+            public ushort min;
             public ushort height;
             public Color32 color;
 
-            public Column(ushort start, ushort height, Color32 color) {
-                this.start = start;
+            public readonly int Max => min + height - 1;
+
+            public Column(ushort min, ushort height, Color32 color) {
+                this.min = min;
                 this.height = height;
                 this.color = color;
             }
@@ -286,10 +302,10 @@ namespace Voxels.Collections {
 #if ENABLE_UNITY_COLLECTIONS_CHECKS 
                 if (i >= columns.Length) throw new InvalidOperationException($"MoveNext call after it already returned false");
 #endif
-                if (i == -1 || y == columns[i].start + columns[i].height - 1) {
+                if (i == -1 || y == columns[i].min + columns[i].height - 1) {
                     i++;
                     if (i == columns.Length) return false;
-                    y = columns[i].start;
+                    y = columns[i].min;
                 }
                 else y++;
                 return true;

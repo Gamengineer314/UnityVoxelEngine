@@ -85,7 +85,7 @@ namespace Voxels.Editor {
             }
 
             // Fill array
-            Native3DArray<Color32> colors = new(max.x - min.x + 1, max.y - min.y + 1, max.z - min.z + 1, Allocator.Persistent);
+            Native3DArray<Color32> colors = new(max - min + 1, Allocator.Persistent);
             foreach (int4 index in indices) {
                 colors[index.xyz - min] = palette[index.w];
             }

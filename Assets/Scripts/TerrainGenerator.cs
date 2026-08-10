@@ -19,7 +19,7 @@ public class TerrainGenerator : MonoBehaviour {
     };
 
     public VoxelColumns GenerateTerrain() {
-        Native2DArray<Voxel> heightMap = new(WorldManager.horizontalSize, WorldManager.horizontalSize, Allocator.Persistent);
+        Native2DArray<Voxel> heightMap = new(WorldManager.horizontalSize, Allocator.Persistent);
         GenerateHeightMap(ref heightMap, new NativeArray<Color32>(colors, Allocator.Temp), amplitude, period, idHeight);
         VoxelColumns voxels = new(heightMap, float3.zero);
         heightMap.Dispose();
@@ -29,8 +29,8 @@ public class TerrainGenerator : MonoBehaviour {
     [BurstCompile]
     private static void GenerateHeightMap(ref Native2DArray<Voxel> heightMap, in NativeArray<Color32> colors, float amplitude, float period, int idHeight) {
         // Sine height map
-        for (int z = 0; z < heightMap.sizeY; z++) {
-            for (int x = 0; x < heightMap.sizeX; x++) {
+        for (int z = 0; z < heightMap.size.y; z++) {
+            for (int x = 0; x < heightMap.size.x; x++) {
                 int height = 1 + (int)(amplitude * (math.sin(2 * math.PI * x / period) * math.sin(2 * math.PI * z / period) + 1));
                 heightMap[x, z] = new(height, colors[height / idHeight]);
             }

@@ -109,14 +109,14 @@ namespace Voxels.Rendering {
             
             List<(MeshData data, JobHandle handle)> jobs = new();
             generations[command] = (jobs, onComplete == null ? new() : new() { onComplete }, asynchronousGeneration);
-            int nJobsX = (int)math.ceil((float)command.voxels.sizeX / jobHorizontalSize);
-            int nJobsZ = (int)math.ceil((float)command.voxels.sizeZ / jobHorizontalSize);
+            int nJobsX = (int)math.ceil((float)command.voxels.size.x / jobHorizontalSize);
+            int nJobsZ = (int)math.ceil((float)command.voxels.size.z / jobHorizontalSize);
             for (int jobZ = 0, i = 0; jobZ < nJobsZ; jobZ++) {
                 for (int jobX = 0; jobX < nJobsX; jobX++, i++) {
                     int jobStartX = jobX * jobHorizontalSize;
                     int jobStartZ = jobZ * jobHorizontalSize;
-                    int jobSizeX = math.min(jobHorizontalSize, command.voxels.sizeX - jobStartX);
-                    int jobSizeZ = math.min(jobHorizontalSize, command.voxels.sizeZ - jobStartZ);
+                    int jobSizeX = math.min(jobHorizontalSize, command.voxels.size.x - jobStartX);
+                    int jobSizeZ = math.min(jobHorizontalSize, command.voxels.size.z - jobStartZ);
                     MeshData data = new(true);
                     GeneratorJob job = new(command.voxels, jobStartX, jobStartZ, jobSizeX, jobSizeZ, command.chunkSize, command.mergeNormalsThreshold, command.seenFromAbove, command.textured, data);
                     JobHandle handle = job.Schedule();
@@ -307,7 +307,7 @@ namespace Voxels.Rendering {
                         }
                     }
                 }
-                if (currentSubChunkStart.x + currentSubChunkSize.x < voxels.sizeX) {
+                if (currentSubChunkStart.x + currentSubChunkSize.x < voxels.size.x) {
                     for (int z = 0; z < currentSubChunkSize.z; z++) {
                         foreach (Voxel voxel in voxels.GetColumn(currentSubChunkStart.x + currentSubChunkSize.x, currentSubChunkStart.z + z)) {
                             int y = voxel.y - currentSubChunkStart.y;
@@ -323,7 +323,7 @@ namespace Voxels.Rendering {
                         }
                     }
                 }
-                if (currentSubChunkStart.z + currentSubChunkSize.z < voxels.sizeZ) {
+                if (currentSubChunkStart.z + currentSubChunkSize.z < voxels.size.z) {
                     for (int x = 0; x < currentSubChunkSize.x; x++) {
                         foreach (Voxel voxel in voxels.GetColumn(currentSubChunkStart.x + x, currentSubChunkStart.z + currentSubChunkSize.z)) {
                             int y = voxel.y - currentSubChunkStart.y;
@@ -386,8 +386,8 @@ namespace Voxels.Rendering {
                             if (seenFromAbove) { // Remove useless faces
                                 int3 next = posDepth;
                                 next[axis]++;
-                                if (axis == 0 && next.x >= voxels.sizeX) continue;
-                                if (axis == 2 && next.z >= voxels.sizeZ) continue;
+                                if (axis == 0 && next.x >= voxels.size.x) continue;
+                                if (axis == 2 && next.z >= voxels.size.z) continue;
                                 if (next.y < voxels.GetMin(next.xz)) continue;
                             }
                             Color32 color = voxels.GetVoxel(posDepth);

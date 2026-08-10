@@ -34,7 +34,11 @@ namespace Voxels.Editor {
             Native3DArray<Color32> colors = ReadVoxels(ctx.assetPath);
             if (fillHoles) FillHoles(colors);
             if (removeInside) RemoveInside(colors);
-            if (swapVerticalAxis) colors = SwapVerticalAxis(colors);
+            if (swapVerticalAxis) {
+                Native3DArray<Color32> newColors = colors.Transpose(0, 2, 1, Allocator.Temp);
+                colors.Dispose();
+                colors = newColors;
+            }
             VoxelColumns voxels = new(colors, offset);
             colors.Dispose();
 
@@ -63,16 +67,16 @@ namespace Voxels.Editor {
         private void FillHoles(Native3DArray<Color32> colors) {
             Stack<int3> stack = new();
             List<int3> list = new();
-            Native3DArray<bool> visited = new(colors.sizeX, colors.sizeY, colors.sizeZ, Allocator.Temp);
-            for (int x = 0; x < colors.sizeX; x++) {
-                for (int y = 0; y < colors.sizeY; y++) {
-                    for (int z = 0; z < colors.sizeZ; z++) {
+            Native3DArray<bool> visited = new(colors.size, Allocator.Temp);
+            for (int z = 0; z < colors.size.z; z++) {
+                for (int y = 0; y < colors.size.y; y++) {
+                    for (int x = 0; x < colors.size.x; x++) {
                         if (!Voxel.Color32Equals(colors[x, y, z], default)) continue;
                         bool isHole = true;
                         stack.Push(new int3(x, y, z));
                         do {
                             int3 pos = stack.Pop();
-                            if (math.any(pos == -1) || pos.x == colors.sizeX || pos.y == colors.sizeY || pos.z == colors.sizeZ) {
+                            if (math.any(pos == -1 | pos == colors.size)) {
                                 isHole = false;
                                 continue;
                             }
@@ -104,12 +108,13 @@ namespace Voxels.Editor {
         /// <param name="colors">3D array of voxel colors</param>
         private void RemoveInside(Native3DArray<Color32> colors) {
             // Find visible voxels
-            Native3DArray<bool> visible = new(colors.sizeX, colors.sizeY, colors.sizeZ, Allocator.Temp);
-            for (int x = 0; x < colors.sizeX; x++) {
-                for (int y = 0; y < colors.sizeY; y++) {
-                    for (int z = 0; z < colors.sizeZ; z++) {
+            Native3DArray<bool> visible = new(colors.size, Allocator.Temp);
+            for (int z = 0; z < colors.size.z; z++) {
+                for (int y = 0; y < colors.size.y; y++) {
+                    for (int x = 0; x < colors.size.x; x++) {
+                        int3 coords = new(x, y, z);
                         if (!Voxel.Color32Equals(colors[x, y, z], default) && (
-                            x == 0 || y == 0 || z == 0 || x == colors.sizeX - 1 || y == colors.sizeY - 1 || z == colors.sizeZ - 1 ||
+                            math.any(coords == 0 | coords == colors.size - 1) ||
                             Voxel.Color32Equals(colors[x - 1, y, z], default) ||
                             Voxel.Color32Equals(colors[x + 1, y, z], default) ||
                             Voxel.Color32Equals(colors[x, y - 1, z], default) ||
@@ -124,9 +129,9 @@ namespace Voxels.Editor {
             }
 
             // Hide invisible faces
-            for (int x = 0; x < colors.sizeX; x++) {
-                for (int y = 0; y < colors.sizeY; y++) {
-                    for (int z = 0; z < colors.sizeZ; z++) {
+            for (int z = 0; z < colors.size.z; z++) {
+                for (int y = 0; y < colors.size.y; y++) {
+                    for (int x = 0; x < colors.size.x; x++) {
                         if (!Voxel.Color32Equals(colors[x, y, z], default) && !visible[x, y, z] && (
                             visible[x - 1, y, z] ||
                             visible[x + 1, y, z] ||
@@ -142,34 +147,15 @@ namespace Voxels.Editor {
             }
 
             // Remove all other voxels
-            for (int x = 0; x < colors.sizeX; x++) {
-                for (int y = 0; y < colors.sizeY; y++) {
-                    for (int z = 0; z < colors.sizeZ; z++) {
+            for (int z = 0; z < colors.size.z; z++) {
+                for (int y = 0; y < colors.size.y; y++) {
+                    for (int x = 0; x < colors.size.x; x++) {
                         if (!visible[x, y, z] && !Voxel.Color32Equals(colors[x, y, z], Voxel.ghost)) {
                             colors[x, y, z] = default;
                         }
                     }
                 }
             }
-        }
-
-
-        /// <summary>
-        /// Swap y and z axis
-        /// </summary>
-        /// <param name="colors">3D array of voxel colors</param>
-        /// <returns>Resulting 3D array of voxel colors</returns>
-        private Native3DArray<Color32> SwapVerticalAxis(Native3DArray<Color32> colors) {
-            Native3DArray<Color32> swapped = new(colors.sizeX, colors.sizeZ, colors.sizeY, Allocator.Persistent);
-            for (int x = 0; x < colors.sizeX; x++) {
-                for (int y = 0; y < colors.sizeY; y++) {
-                    for (int z = 0; z < colors.sizeZ; z++) {
-                        swapped[x, z, y] = colors[x, y, z];
-                    }
-                }
-            }
-            colors.Dispose();
-            return swapped;
         }
     }
 

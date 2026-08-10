@@ -3,6 +3,7 @@ using System.IO;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.SceneManagement;
+using Unity.Mathematics;
 using Voxels.Collections;
 using Voxels.Rendering;
 
@@ -20,16 +21,7 @@ namespace Voxels.Editor {
         private void Enable() {
             VoxelColumnsAsset voxelsAsset = (VoxelColumnsAsset)target;
             VoxelColumns voxels = voxelsAsset.voxels;
-            float minY = float.PositiveInfinity;
-            float maxY = float.NegativeInfinity;
-            for (int x = 0; x < voxels.sizeX; x++) {
-                for (int z = 0; z < voxels.sizeZ; z++) {
-                    minY = Mathf.Min(minY, voxels.GetMin(x, z));
-                    maxY = Mathf.Max(maxY, voxels.GetMax(x, z));
-                }
-            }
-            Vector3 size = new(voxels.sizeX, maxY - minY + 1, voxels.sizeZ);
-            meshBounds = new Bounds((Vector3)voxels.offset + size / 2, size);
+            meshBounds = new Bounds(voxels.offset + voxels.size / 2, (float3)voxels.size);
             previewDir = new Vector2(300, -20);
 
             preview = new PreviewRenderUtility();

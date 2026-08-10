@@ -55,7 +55,7 @@ namespace Voxels.Editor {
             }
 
             // Read cubes
-            Native3DArray<Color32> colors = new(max.x - min.x, max.y - min.y, max.z - min.z, Allocator.Persistent);
+            Native3DArray<Color32> colors = new(max - min, Allocator.Persistent);
             for (int i = 0; i < facesCount / 6; i++) {
                 int vertIndex = int.Parse(reader.ReadLine().Split(' ')[1]);
                 int3 local = vertices[vertIndex] - min;
