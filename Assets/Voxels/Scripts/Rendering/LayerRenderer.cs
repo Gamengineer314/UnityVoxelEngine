@@ -100,5 +100,18 @@ namespace Voxels.Rendering {
         internal void Render() {
             Graphics.RenderPrimitivesIndexedIndirect(renderParams, MeshTopology.Triangles, renderer.indicesBuffer, commandsBuffer, (int)count[0]);
         }
+
+
+#if UNITY_EDITOR
+        internal void RenderWireframe() {
+            renderer.wireframeMaterial.SetBuffer(ShaderID.offsets, offsetsBuffer);
+            renderer.wireframeMaterial.SetBuffer(ShaderID.renderedTransforms, renderedTransformsBuffer);
+            for (int i = 0; i < count[0]; i++) {
+                renderer.wireframeMaterial.SetInteger(ShaderID.baseCommandID, i);
+                renderer.wireframeMaterial.SetPass(0);
+                Graphics.DrawProceduralIndirectNow(MeshTopology.Triangles, renderer.indicesBuffer, commandsBuffer, i * 5 * sizeof(uint));
+            }
+        }
+#endif
     }
 }

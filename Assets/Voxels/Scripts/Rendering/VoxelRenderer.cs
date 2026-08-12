@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using UnityEngine;
 using UnityEngine.SceneManagement;
+using UnityEditor;
 #if UNITY_EDITOR
 using UnityEditor.SceneManagement;
 #endif
@@ -17,9 +19,6 @@ namespace Voxels.Rendering {
         internal const int maxFaceCount = 16384;
 
         internal static VoxelRenderer sceneRenderer; // Current scene renderer
-#if UNITY_EDITOR
-        internal static Dictionary<Scene, VoxelRenderer> previewRenderers = new(); // Prefab and asset preview renderers
-#endif
 
         [SerializeField] private ComputeShader cullingShader;
         [SerializeField] private float quadsInterleaving = 0.05f; // Remove 1 pixel gaps between triangles
@@ -30,6 +29,11 @@ namespace Voxels.Rendering {
         internal MeshGenerator generator { get; private set; }
         private readonly Dictionary<Camera, CameraRenderer> renderers = new();
         private readonly Dictionary<(Material, ShaderParameters), VoxelLayer[]> layers = new();
+
+#if UNITY_EDITOR
+        internal static Dictionary<Scene, VoxelRenderer> previewRenderers = new(); // Prefab and asset preview renderers
+        internal Material wireframeMaterial;
+#endif
 
         public float QuadsInterleaving {
             get => quadsInterleaving;
@@ -153,8 +157,8 @@ namespace Voxels.Rendering {
             Camera.onPreCull += Render;
 #endif
 
-            ushort[] indices = new ushort[98304];
-            for (int i = 0; i < 16384; i++) {
+            ushort[] indices = new ushort[maxFaceCount * 6];
+            for (int i = 0; i < maxFaceCount; i++) {
                 indices[6 * i] = (ushort)(4 * i);
                 indices[6 * i + 1] = (ushort)(4 * i + 1);
                 indices[6 * i + 2] = (ushort)(4 * i + 2);
@@ -168,6 +172,9 @@ namespace Voxels.Rendering {
             meshBuffers = new MeshBuffers();
             generator = new MeshGenerator(meshBuffers);
             if (cullingShader != null) CullingShader = cullingShader;
+#if UNITY_EDITOR
+            wireframeMaterial = AssetDatabase.LoadAssetAtPath<Material>(Path.Combine("Assets", "Voxels", "Shaders", "Wireframe.mat"));
+#endif
         }
 
 
@@ -215,10 +222,10 @@ namespace Voxels.Rendering {
 
 #if UNITY_EDITOR
         private static void RenderSwitch(Camera camera) {
-            if (camera.gameObject.scene == SceneManager.GetActiveScene()) { // Some camera in the scene
+            if (camera.cameraType == CameraType.Game) {
                 if (sceneRenderer) sceneRenderer.Render(camera);
             }
-            else if (!camera.gameObject.scene.IsValid()) { // Scene camera
+            else if (camera.cameraType == CameraType.SceneView) {
                 PrefabStage stage = PrefabStageUtility.GetCurrentPrefabStage();
                 if (stage) { // Prefab scene
                     if (previewRenderers.TryGetValue(stage.scene, out VoxelRenderer renderer)) {
@@ -229,9 +236,31 @@ namespace Voxels.Rendering {
                     if (sceneRenderer) sceneRenderer.Render(camera);
                 }
             }
-            else if (previewRenderers.TryGetValue(camera.gameObject.scene, out VoxelRenderer renderer)) { // Asset preview camera
+            else if (camera.cameraType == CameraType.Preview && previewRenderers.TryGetValue(camera.gameObject.scene, out VoxelRenderer renderer)) {
                 renderer.Render(camera);
             }
+        }
+
+
+        private void OnRenderObject() {
+            if (Camera.current.cameraType == CameraType.SceneView) {
+                DrawCameraMode mode = SceneView.currentDrawingSceneView.cameraMode.drawMode;
+                if (mode == DrawCameraMode.Wireframe || mode == DrawCameraMode.TexturedWire) {
+                    RenderWireframe();   
+                }
+            }
+        }
+
+
+        /// <summary>
+        /// Render the scene in wireframe mode
+        /// </summary>
+        private void RenderWireframe() {
+            GL.wireframe = true;
+            wireframeMaterial.SetBuffer(ShaderID.faces, meshBuffers.facesBuffer);
+            wireframeMaterial.SetBuffer(ShaderID.colors, meshBuffers.colorsBuffer);
+            renderers[Camera.current].RenderWireframe(this);
+            GL.wireframe = false;
         }
 #endif
     }

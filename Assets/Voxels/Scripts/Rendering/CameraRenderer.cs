@@ -39,6 +39,14 @@ namespace Voxels.Rendering {
                 renderer.Render();
             }
         }
+
+#if UNITY_EDITOR
+        public void RenderWireframe(VoxelRenderer voxelRenderer) {
+            foreach (VoxelLayer layer in voxelRenderer.GetLayers(camera.cullingMask)) {
+                renderers[(layer.layer, layer.material)].RenderWireframe();
+            }
+        }
+#endif
     }
 
 }

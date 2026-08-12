@@ -22,6 +22,10 @@ namespace Voxels.Rendering {
         public static readonly int offsets = Shader.PropertyToID("offsets");
         public static readonly int transforms = Shader.PropertyToID("transforms");
         public static readonly int renderedTransforms = Shader.PropertyToID("renderedTransforms");
+#if UNITY_EDITOR
+        public static readonly int baseCommandID = Shader.PropertyToID("unity_BaseCommandID");
+#endif
+
         public static LocalKeyword cullingInstance;
         public static LocalKeyword cullingOrthographic;
 
