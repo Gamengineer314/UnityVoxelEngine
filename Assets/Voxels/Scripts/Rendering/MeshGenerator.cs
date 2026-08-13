@@ -452,8 +452,8 @@ namespace Voxels.Rendering {
                         currentFaces.Add(new VoxelFace(pos - currentChunkStart, width, height, normal, index));
 
                         int prevX = x;
-                        x += width;
-                        x += math.tzcnt(row >> x);
+                        row &= deleteMask;
+                        x = math.tzcnt(row);
                         pos[VoxelNormals.WidthAxis(normal)] += x - prevX;
                     }
                     beforeX[VoxelNormals.HeightAxis(normal)]++;
