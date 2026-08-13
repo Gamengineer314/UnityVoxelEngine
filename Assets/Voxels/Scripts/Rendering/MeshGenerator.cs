@@ -145,6 +145,7 @@ namespace Voxels.Rendering {
             private int3 currentSubChunkSize;
             private int chunkIndex;
             private int startFace;
+            private int startColor;
             private int nIDs;
             private UnsafeArray<ulong> rows;
             private UnsafeArray<bool2> sides;
@@ -173,6 +174,7 @@ namespace Voxels.Rendering {
                 currentSubChunkStart = 0;
                 currentSubChunkSize = 0;
                 startFace = 0;
+                startColor = 0;
                 chunkIndex = 0;
                 nIDs = 0;
                 rows = default;
@@ -184,43 +186,9 @@ namespace Voxels.Rendering {
 
 
             public void Execute() {
-                // Find IDs and y ranges
+                // Generate all chunks
                 int nChunksX = (int)math.ceil((float)sizeX / chunkSize);
                 int nChunksZ = (int)math.ceil((float)sizeZ / chunkSize);
-                Native2DArray<int2> yRanges = new(nChunksX, nChunksZ, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
-                for (int chunkZ = 0; chunkZ < nChunksZ; chunkZ++) {
-                    int chunkStartZ = startZ + chunkZ * chunkSize;
-                    int chunkEndZ = math.min(chunkStartZ + chunkSize, startZ + sizeZ);
-                    for (int chunkX = 0; chunkX < nChunksX; chunkX++) {
-                        int chunkStartX = startX + chunkX * chunkSize;
-                        int chunkEndX = math.min(chunkStartX + chunkSize, startX + sizeX);
-                        int min = int.MaxValue, max = int.MinValue;
-                        for (int z = chunkStartZ; z < chunkEndZ; z++) {
-                            for (int x = chunkStartX; x < chunkEndX; x++) {
-                                min = math.min(min, voxels.GetMin(x, z));
-                                max = math.max(max, voxels.GetMax(x, z));
-                                foreach (Voxel voxel in voxels.GetColumn(x, z)) {
-                                    if (!textured && !Voxel.Color32Equals(voxel.color, Voxel.ghost)) {
-                                        int id = Voxel.Color32HashCode(voxel.color);
-                                        if (!data.colorIndices.ContainsKey(id)) {
-                                            data.colorIndices[id] = data.colors.Length;
-                                            data.colors.Add(voxel.color);
-                                            nIDs++;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        yRanges[chunkX, chunkZ] = new(min, max);
-                    }
-                }
-                if (textured) nIDs = 1;
-                else if (nIDs > VoxelFace.maxColor) throw new InvalidOperationException($"Number of colors can't exceed {VoxelFace.maxColor}");
-
-                // Generate all chunks
-                rows = new UnsafeArray<ulong>(subChunkSize * subChunkSize * 3, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
-                sides = new UnsafeArray<bool2>(subChunkSize * subChunkSize * 3, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
-                planes = new UnsafeArray<ulong>(subChunkSize * subChunkSize * nIDs * 6, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
                 currentFaces = new UnsafeList<VoxelFace>(0, Allocator.Temp);
                 for (int chunkZ = 0; chunkZ < nChunksZ; chunkZ++) {
                     currentChunkStart.z = startZ + chunkZ * chunkSize;
@@ -230,11 +198,37 @@ namespace Voxels.Rendering {
                         currentChunkStart.x = startX + chunkX * chunkSize;
                         int chunkEndX = math.min(currentChunkStart.x + chunkSize, startX + sizeX);
                         int nSubChunksX = (int)math.ceil((float)(chunkEndX - currentChunkStart.x) / subChunkSize);
-                        int2 yRange = yRanges[chunkX, chunkZ];
-                        int nChunksY = (int)math.ceil((float)(yRange.y - yRange.x + 1) / chunkSize);
+
+                        // Find IDs and y ranges
+                        startColor = data.colors.Length;
+                        nIDs = 0;
+                        data.colorIndices.Clear();
+                        int minY = int.MaxValue, maxY = int.MinValue;
+                        for (int z = currentChunkStart.z; z < chunkEndZ; z++) {
+                            for (int x = currentChunkStart.x; x < chunkEndX; x++) {
+                                minY = math.min(minY, voxels.GetMin(x, z));
+                                maxY = math.max(maxY, voxels.GetMax(x, z));
+                                foreach (Voxel voxel in voxels.GetColumn(x, z)) {
+                                    if (!textured && !Voxel.Color32Equals(voxel.color, Voxel.ghost)) {
+                                        int id = Voxel.Color32HashCode(voxel.color);
+                                        if (!data.colorIndices.ContainsKey(id)) {
+                                            data.colorIndices[id] = nIDs++;
+                                            data.colors.Add(voxel.color);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        if (textured) nIDs = 1;
+                        else if (nIDs > VoxelFace.maxColor) throw new InvalidOperationException($"Number of colors can't exceed {VoxelFace.maxColor}");
+                        
+                        rows = new UnsafeArray<ulong>(subChunkSize * subChunkSize * 3, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
+                        sides = new UnsafeArray<bool2>(subChunkSize * subChunkSize * 3, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
+                        planes = new UnsafeArray<ulong>(subChunkSize * subChunkSize * nIDs * 6, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
+                        int nChunksY = (int)math.ceil((float)(maxY - minY + 1) / chunkSize);
                         for (int chunkY = 0; chunkY < nChunksY; chunkY++) {
-                            currentChunkStart.y = yRange.x + chunkY * chunkSize;
-                            int chunkEndY = math.min(currentChunkStart.y + chunkSize, yRange.y + 1);
+                            currentChunkStart.y = minY + chunkY * chunkSize;
+                            int chunkEndY = math.min(currentChunkStart.y + chunkSize, maxY + 1);
                             int nSubChunksY = (int)math.ceil((float)(chunkEndY - currentChunkStart.y) / subChunkSize);
 
                             // Generate all chunks
@@ -248,7 +242,7 @@ namespace Voxels.Rendering {
                                     currentSubChunkSize.x = math.min(subChunkSize, chunkEndX - currentSubChunkStart.x);
                                     for (int subChunkY = 0; subChunkY < nSubChunksY; subChunkY++) {
                                         currentSubChunkStart.y = currentChunkStart.y + subChunkY * subChunkSize;
-                                        currentSubChunkSize.y = math.min(subChunkSize, yRange.y + 1 - currentSubChunkStart.y);
+                                        currentSubChunkSize.y = math.min(subChunkSize, maxY + 1 - currentSubChunkStart.y);
 
                                         // Generate one chunk
                                         rows.Clear();
@@ -268,7 +262,6 @@ namespace Voxels.Rendering {
                     }
                 }
 
-                yRanges.Dispose();
                 rows.Dispose();
                 sides.Dispose();
                 planes.Dispose();
@@ -471,7 +464,6 @@ namespace Voxels.Rendering {
                     int3 max = int.MinValue;
                     VoxelNormal chunkNormal = VoxelNormal.None;
                     int faceCount = 0;
-                    int startColor = textured ? data.colors.Length : 0;
 
                     // Add all faces of a chunk
                     while (faceCount < VoxelRenderer.maxFaceCount) {
