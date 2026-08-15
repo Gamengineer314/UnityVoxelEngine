@@ -201,14 +201,11 @@ namespace Voxels.Rendering {
         }
 
 
-        private void Update() {
-            foreach (VoxelLayer layer in Layers) {
-                layer.Update();
-            }
-        }
-
         private void LateUpdate() {
             generator.Update();
+            foreach (VoxelLayer layer in Layers) {
+                layer.LateUpdate();
+            }
         }
 
 

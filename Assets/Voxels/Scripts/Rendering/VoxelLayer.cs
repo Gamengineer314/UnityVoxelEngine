@@ -39,7 +39,7 @@ namespace Voxels.Rendering {
         /// <summary>
         /// Update layer and transform of the objects in this layer
         /// </summary>
-        public void Update() {
+        public void LateUpdate() {
             for (int i = instances.Count - 1; i >= 0; i--) {
                 List<VoxelMesh> meshInstances = instances[i];
                 for (int j = meshInstances.Count - 1; j >= 0; j--) {
@@ -49,7 +49,9 @@ namespace Voxels.Rendering {
                         instance.layer = VoxelRenderer.GetRenderer(instance).GetLayer(instance);
                         instance.layer.AddInstance(instance);
                     }
-                    else layerBuffers.UpdateTransform(i, j, instance.transform.localToWorldMatrix);
+                    else if (instance.LateTransformChanged) {
+                        layerBuffers.UpdateTransform(i, j, instance.transform.localToWorldMatrix);
+                    }
                 }
             }
         }

@@ -13,6 +13,29 @@ namespace Voxels.Rendering {
         internal GenerationCommand command;
         public bool generated { get; internal set; }
 
+        /// <summary>
+        /// Whether the transform has changed during the previous frame
+        /// </summary>
+        public bool transformChanged { get; private set; }
+        private int lastFrame;
+
+        /// <summary>
+        /// Whether the transform has changed during the current frame.
+        /// This property updates [transformChanged] the first time it's called each frame.
+        /// It should therefore only be accessed in LateUpdate after all transform changes.
+        /// </summary>
+        public bool LateTransformChanged {
+            get {
+                int frame = Time.frameCount;
+                if (frame != lastFrame) {
+                    lastFrame = frame;
+                    transformChanged = transform.hasChanged;
+                    transform.hasChanged = false;
+                }
+                return transformChanged;
+            }
+        }
+
 
         public VoxelColumns Voxels {
             get => command.voxels;

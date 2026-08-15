@@ -1,4 +1,5 @@
 using UnityEngine;
+using Unity.Mathematics;
 
 namespace Voxels.Rendering {
     
@@ -53,7 +54,7 @@ namespace Voxels.Rendering {
             }
             if (renderedTransformsBuffer == null || renderedTransformsBuffer.count != renderedTransformsSize) {
                 renderedTransformsBuffer?.Dispose();
-                renderedTransformsBuffer = new(GraphicsBuffer.Target.Structured, renderedTransformsSize, sizeof(Matrix4x4));
+                renderedTransformsBuffer = new(GraphicsBuffer.Target.Structured, renderedTransformsSize, sizeof(float4x4));
                 renderParams.matProps.SetBuffer(ShaderID.renderedTransforms, renderedTransformsBuffer);
             }
 
