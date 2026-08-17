@@ -1,4 +1,3 @@
-using System;
 using UnityEngine;
 using Voxels.Collections;
 
@@ -38,7 +37,7 @@ namespace Voxels.Rendering {
 
 
         public VoxelColumns Voxels {
-            get => command.voxels;
+            get => voxelsAsset ? voxelsAsset.voxels : command.voxels;
             set {
                 RemoveFromLayer();
                 voxelsAsset = null;

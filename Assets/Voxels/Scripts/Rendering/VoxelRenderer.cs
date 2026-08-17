@@ -222,7 +222,7 @@ namespace Voxels.Rendering {
             if (camera.cameraType == CameraType.Game) {
                 if (sceneRenderer) sceneRenderer.Render(camera);
             }
-            else if (camera.cameraType == CameraType.SceneView) {
+            else if (!camera.gameObject.scene.IsValid()) { // Scene camera or camera preview
                 PrefabStage stage = PrefabStageUtility.GetCurrentPrefabStage();
                 if (stage) { // Prefab scene
                     if (previewRenderers.TryGetValue(stage.scene, out VoxelRenderer renderer)) {
@@ -233,8 +233,10 @@ namespace Voxels.Rendering {
                     if (sceneRenderer) sceneRenderer.Render(camera);
                 }
             }
-            else if (camera.cameraType == CameraType.Preview && previewRenderers.TryGetValue(camera.gameObject.scene, out VoxelRenderer renderer)) {
-                renderer.Render(camera);
+            else { // Asset preview camera
+                if (previewRenderers.TryGetValue(camera.gameObject.scene, out VoxelRenderer renderer)) {
+                    renderer.Render(camera);   
+                }
             }
         }
 
