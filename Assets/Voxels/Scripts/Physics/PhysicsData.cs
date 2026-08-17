@@ -153,18 +153,19 @@ namespace Voxels.Physics {
         /// <param name="origin">Origin of the ray</param>
         /// <param name="direction">Direction of the ray</param>
         /// <param name="maxDistance">Maximum distance between the origin and the hit point</param>
+        /// <param name="layerMask">Layers of colliders that are considered</param>
         /// <param name="point">Hit point</param>
         /// <param name="normal">Normal of the face that was hit</param>
         /// <param name="type">Type of the collider that was hit</param>
         /// <param name="index">Index of the collider that was hit</param>
         /// <returns>Whether the ray hit a collider</returns>
         public bool Raycast(
-            float3 origin, float3 direction, float maxDistance,
+            float3 origin, float3 direction, float maxDistance, int layerMask,
             out float3 point, out float3 normal, out ColliderType type, out int index
         ) {
             if (math.any(origin < offset) || math.any(origin > offset + size))
                 throw new ArgumentOutOfRangeException($"Ray origin {origin} is out of range of physics octree");
-            bool hit = Raycast(root, offset + size / 2, size / 2, origin, direction, maxDistance, out float hitDistance, out int hitAxis, out int hitIndex);
+            bool hit = Raycast(root, offset + size / 2, size / 2, origin, direction, maxDistance, layerMask, out float hitDistance, out int hitAxis, out int hitIndex);
             if (hit) {
                 point = origin + direction * hitDistance;
                 normal = GetNormal(direction, hitAxis);
@@ -182,7 +183,7 @@ namespace Voxels.Physics {
 
         private bool Raycast(
             int node, float3 center, float childSize,
-            float3 origin, float3 direction, float maxDistance,
+            float3 origin, float3 direction, float maxDistance, int layerMask,
             out float hitDistance, out int hitAxis, out int hitIndex
         ) {
             hitAxis = -1;
@@ -194,6 +195,7 @@ namespace Voxels.Physics {
             
             // Raycast in all colliders in this node
             for (int i = octree[9 * node]; i != -1; i = colliders[i].next) {
+                if ((colliders[i].layerMask & layerMask) == 0) continue;
                 int axis = 0;
                 float distance = 0;
                 bool hit = colliders[i].type switch {
@@ -218,7 +220,7 @@ namespace Voxels.Physics {
                 int childNode = octree[9 * node + 1 + math.bitmask(new bool4(side, false))];
                 float halfChildSize = childSize / 2;
                 float3 childCenter = math.select(center - halfChildSize, center + halfChildSize, side);
-                if (Raycast(childNode, childCenter, halfChildSize, childOrigin, direction, maxDistance - addedDistance, out float distance, out int axis, out int index)) {
+                if (Raycast(childNode, childCenter, halfChildSize, childOrigin, direction, maxDistance - addedDistance, layerMask, out float distance, out int axis, out int index)) {
                     maxDistance = distance + addedDistance;
                     hitAxis = axis;
                     hitIndex = index;
@@ -278,9 +280,9 @@ namespace Voxels.Physics {
 
         [BurstCompile]
         public static bool Raycast(
-            ref PhysicsData @this, in float3 origin, in float3 direction, float maxDistance,
+            ref PhysicsData @this, in float3 origin, in float3 direction, float maxDistance, int layerMask,
             out float3 point, out float3 normal, out ColliderType type, out int index
-        ) => @this.Raycast(origin, direction, maxDistance, out point, out normal, out type, out index);
+        ) => @this.Raycast(origin, direction, maxDistance, layerMask, out point, out normal, out type, out index);
 
 
         private readonly struct LinkedCollider {

@@ -46,7 +46,7 @@ namespace Voxels.Physics {
         /// <param name="hitInfo">Information about the hit point if the ray hit a collider</param>
         /// <returns>Whether the ray hit a collider</returns>
         public bool Raycast(Ray ray, float maxDistance, int layerMask, out VoxelRaycastHit hitInfo) {
-            bool hit = data.Raycast(ray.origin, ray.direction, maxDistance, out float3 point, out float3 normal, out ColliderType type, out int index);
+            bool hit = PhysicsData.Raycast(ref data, ray.origin, ray.direction, maxDistance, layerMask, out float3 point, out float3 normal, out ColliderType type, out int index);
             GameObject collider = type switch {
                 ColliderType.Mesh => meshColliders[index].gameObject,
                 ColliderType.Box => boxColliders[index].gameObject,
@@ -67,7 +67,7 @@ namespace Voxels.Physics {
                 octree = new BinaryOctree(collider.mesh.Voxels);
                 meshOctrees[collider.mesh.Voxels] = octree;
             }
-            data.AddMeshCollider(new BinaryOctree(octree, collider.transform), collider.gameObject.layer);
+            PhysicsData.AddMeshCollider(ref data, new BinaryOctree(octree, collider.transform), collider.gameObject.layer);
         }
 
         /// <summary>
@@ -78,7 +78,7 @@ namespace Voxels.Physics {
             boxColliders.Add(collider);
             Vector3 center = collider.Center + collider.transform.position;
             Box box = new(center - collider.Size / 2, center + collider.Size / 2);
-            data.AddBoxCollider(box, collider.gameObject.layer);
+            PhysicsData.AddBoxCollider(ref data, box, collider.gameObject.layer);
         }
     }
 
