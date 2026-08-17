@@ -126,47 +126,47 @@ namespace Voxels.Physics {
         /// </summary>
         /// <param name="origin">Origin of the ray</param>
         /// <param name="direction">Direction of the ray</param>
-        /// <param name="maxDistance">Maximum distance between the origin and the hit point</param>
-        /// <param name="hitDistance">Distance between the origin and the hit point</param>
+        /// <param name="inverse">Pre-computed inverse of [direction]</param>
+        /// <param name="distance">
+        /// Input: Maximum distance between the origin and the hit point.
+        /// Output: Actual distance.
+        /// </param>
         /// <param name="axis">Axis of the face that was hit</param>
-        /// <returns>Whether the ray hit the box</returns>
-        public readonly bool Raycast(float3 origin, float3 direction, float maxDistance, out float hitDistance, out int axis) {
+        /// <returns>Whether the ray hit a voxel</returns>
+        public readonly bool Raycast(float3 origin, float3 direction, float3 inverse, ref float distance, out int axis) {
             // Raycast the bounds in world coordinates
-            if (!bounds.Raycast(origin, direction, maxDistance, out hitDistance, out axis)) {
+            float boundsDistance = distance;
+            if (!bounds.Raycast(origin, direction, inverse, ref boundsDistance, out axis)) {
                 return false;
             }
 
             // Raycast the voxels in local coordinates
-            float3 localOrigin = ToLocal(origin + direction * hitDistance, true);
+            float3 localOrigin = ToLocal(origin + direction * boundsDistance, true);
             float3 localDirection = ToLocal(direction, false);
-            float localMaxDistance = maxDistance - hitDistance;
+            float localDistance = distance - boundsDistance;
             int localAxis = ToLocal(axis);
             bool hit = Raycast(
-                root, localAxis, size >> 1,
-                localOrigin, localDirection, localMaxDistance, out float localHitDistance, out int localHitAxis
+                root, size >> 1,
+                localOrigin, localDirection, 1 / localDirection, ref localDistance, ref localAxis
             );
-            hitDistance = localHitDistance + hitDistance;
-            axis = ToWorld(localHitAxis);
+            distance = localDistance + boundsDistance;
+            axis = ToWorld(localAxis);
             return hit;
         }
 
         private readonly bool Raycast(
-            int node, int axis, int childSize,
-            float3 origin, float3 direction, float maxDistance, out float hitDistance, out int hitAxis
+            int node, int childSize,
+            float3 origin, float3 direction, float3 inverse, ref float distance, ref int axis
         ) {
-            if (node == empty) { // No hit in this node
-                hitDistance = float.PositiveInfinity;
-                hitAxis = -1;
-                return false;
-            }
+            if (node == empty) return false;
             if (node == full) { // Hit at this point
-                hitDistance = 0;
-                hitAxis = axis;
+                distance = 0;
                 return true;
             }
 
             // Raycast in children traversed by the ray
-            float3 distances = (childSize - origin) / direction;
+            float3 distances = (childSize - origin) * inverse;
+            distances = math.select(distances, float.PositiveInfinity, distances < 0);
             bool3 side = origin > childSize;
             float addedDistance = 0;
             float3 childOrigin = origin;
@@ -174,32 +174,28 @@ namespace Voxels.Physics {
                 // Raycast in child
                 int childNode = children[8 * node + math.bitmask(new bool4(side, false))];
                 float3 offset = math.select(0, childSize, side);
-                if (Raycast(childNode, axis, childSize >> 1, childOrigin - offset, direction, maxDistance - addedDistance, out hitDistance, out hitAxis)) {
-                    hitDistance += addedDistance;
+                float childDistance = distance - addedDistance;
+                if (Raycast(childNode, childSize >> 1, childOrigin - offset, direction, inverse, ref childDistance, ref axis)) {
+                    distance = childDistance + addedDistance;
                     return true;
                 }
 
                 // Find next child
-                axis = -1;
-                addedDistance = maxDistance;
-                for (int j = 0; j < 3; j++) {
-                    float d = distances[j];
-                    float3 intersection = origin + d * direction;
-                    intersection[j] = childSize;
-                    if (d >= 0 && d < addedDistance && math.all(intersection >= 0 & intersection <= 2 * childSize)) {
-                        addedDistance = d;
+                axis = 0;
+                addedDistance = distances[0];
+                for (int j = 1; j < 3; j++) {
+                    if (distances[j] < addedDistance) {
                         axis = j;
-                        childOrigin = intersection;
+                        addedDistance = distances[j];
                     }
                 }
-                if (axis == -1) break;
+                if (addedDistance > distance) break;
+                childOrigin = origin + direction * addedDistance;
+                childOrigin[axis] = childSize;
+                if (!math.all(childOrigin >= 0 & childOrigin <= 2 * childSize)) break;
                 side[axis] = !side[axis];
                 distances[axis] = float.PositiveInfinity;
             }
-
-            // No hit in this node
-            hitDistance = float.PositiveInfinity;
-            hitAxis = -1;
             return false;
         }
 

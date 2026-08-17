@@ -152,7 +152,7 @@ namespace Voxels.Physics {
         /// </summary>
         /// <param name="origin">Origin of the ray</param>
         /// <param name="direction">Direction of the ray</param>
-        /// <param name="maxDistance">Maximum distance between the origin and the hit point</param>
+        /// <param name="distance">Maximum distance between the origin and the hit point</param>
         /// <param name="layerMask">Layers of colliders that are considered</param>
         /// <param name="point">Hit point</param>
         /// <param name="normal">Normal of the face that was hit</param>
@@ -160,14 +160,14 @@ namespace Voxels.Physics {
         /// <param name="index">Index of the collider that was hit</param>
         /// <returns>Whether the ray hit a collider</returns>
         public bool Raycast(
-            float3 origin, float3 direction, float maxDistance, int layerMask,
+            float3 origin, float3 direction, float distance, int layerMask,
             out float3 point, out float3 normal, out ColliderType type, out int index
         ) {
             if (math.any(origin < offset) || math.any(origin > offset + size))
                 throw new ArgumentOutOfRangeException($"Ray origin {origin} is out of range of physics octree");
-            bool hit = Raycast(root, offset + size / 2, size / 2, origin, direction, maxDistance, layerMask, out float hitDistance, out int hitAxis, out int hitIndex);
+            bool hit = Raycast(root, offset + size / 2, size / 2, origin, direction, 1 / direction, ref distance, layerMask, out int hitAxis, out int hitIndex);
             if (hit) {
-                point = origin + direction * hitDistance;
+                point = origin + direction * distance;
                 normal = GetNormal(direction, hitAxis);
                 type = colliders[hitIndex].type;
                 index = colliders[hitIndex].index;
@@ -183,35 +183,30 @@ namespace Voxels.Physics {
 
         private bool Raycast(
             int node, float3 center, float childSize,
-            float3 origin, float3 direction, float maxDistance, int layerMask,
-            out float hitDistance, out int hitAxis, out int hitIndex
+            float3 origin, float3 direction, float3 inverse, ref float distance, int layerMask, out int hitAxis, out int hitIndex
         ) {
             hitAxis = -1;
             hitIndex = -1;
-            if (node == -1) { // No hit in this node
-                hitDistance = float.PositiveInfinity;
-                return false;
-            }
+            if (node == -1) return false;
             
             // Raycast in all colliders in this node
             for (int i = octree[9 * node]; i != -1; i = colliders[i].next) {
                 if ((colliders[i].layerMask & layerMask) == 0) continue;
                 int axis = 0;
-                float distance = 0;
                 bool hit = colliders[i].type switch {
-                    ColliderType.Mesh => meshColliders[colliders[i].index].Raycast(origin, direction, maxDistance, out distance, out axis),
-                    ColliderType.Box => boxColliders[colliders[i].index].Raycast(origin, direction, maxDistance, out distance, out axis),
+                    ColliderType.Mesh => meshColliders[colliders[i].index].Raycast(origin, direction, inverse, ref distance, out axis),
+                    ColliderType.Box => boxColliders[colliders[i].index].Raycast(origin, direction, inverse, ref distance, out axis),
                     _ => false
                 };
                 if (hit) {
-                    maxDistance = distance;
                     hitAxis = axis;
                     hitIndex = i;
                 }
             }
 
             // Raycast in children traversed by the ray
-            float3 distances = (center - origin) / direction;
+            float3 distances = (center - origin) * inverse;
+            distances = math.select(distances, float.PositiveInfinity, distances < 0);
             bool3 side = origin > center;
             float addedDistance = 0;
             float3 childOrigin = origin;
@@ -220,39 +215,32 @@ namespace Voxels.Physics {
                 int childNode = octree[9 * node + 1 + math.bitmask(new bool4(side, false))];
                 float halfChildSize = childSize / 2;
                 float3 childCenter = math.select(center - halfChildSize, center + halfChildSize, side);
-                if (Raycast(childNode, childCenter, halfChildSize, childOrigin, direction, maxDistance - addedDistance, layerMask, out float distance, out int axis, out int index)) {
-                    maxDistance = distance + addedDistance;
+                float childDistance = distance - addedDistance;
+                if (Raycast(childNode, childCenter, halfChildSize, childOrigin, direction, inverse, ref childDistance, layerMask, out int axis, out int index)) {
+                    distance = childDistance + addedDistance;
                     hitAxis = axis;
                     hitIndex = index;
                     break;
                 }
 
                 // Find next child
-                axis = -1;
-                addedDistance = maxDistance;
-                for (int j = 0; j < 3; j++) {
-                    float d = distances[j];
-                    float3 intersection = origin + d * direction;
-                    intersection[j] = center[j];
-                    if (d >= 0 && d < addedDistance && math.all(intersection >= center - childSize & intersection <= center + childSize)) {
-                        addedDistance = d;
+                axis = 0;
+                addedDistance = distances[0];
+                for (int j = 1; j < 3; j++) {
+                    if (distances[j] < addedDistance) {
                         axis = j;
-                        childOrigin = intersection;
+                        addedDistance = distances[j];
                     }
                 }
-                if (axis == -1) break;
+                if (addedDistance > distance) break;
+                childOrigin = origin + direction * addedDistance;
+                childOrigin[axis] = center[axis];
+                if (!math.all(childOrigin >= center - childSize & childOrigin <= center + childSize)) break;
                 side[axis] = !side[axis];
                 distances[axis] = float.PositiveInfinity;
             }
 
-            if (hitAxis == -1) { // No hit in this node
-                hitDistance = float.PositiveInfinity;
-                return false;
-            }
-            else { // Some hits in this node
-                hitDistance = maxDistance;
-                return true;   
-            }
+            return hitAxis != -1;
         }
 
         private static float3 GetNormal(float3 direction, int axis) {

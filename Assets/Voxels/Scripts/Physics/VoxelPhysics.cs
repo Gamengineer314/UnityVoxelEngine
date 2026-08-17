@@ -76,9 +76,7 @@ namespace Voxels.Physics {
         /// <param name="collider">The collider</param>
         internal void AddBoxCollider(VoxelBoxCollider collider) {
             boxColliders.Add(collider);
-            Vector3 center = collider.Center + collider.transform.position;
-            Box box = new(center - collider.Size / 2, center + collider.Size / 2);
-            PhysicsData.AddBoxCollider(ref data, box, collider.gameObject.layer);
+            PhysicsData.AddBoxCollider(ref data, collider.Box, collider.gameObject.layer);
         }
     }
 

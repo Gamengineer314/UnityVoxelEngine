@@ -18,7 +18,6 @@ public class PhysicsBenchmark : MonoBehaviour {
   
     private void Start() {
         InstantiatePrefabs();
-        Debug.Log(BenchmarkRaycast());
         benchmark = new Benchmark();
         benchmark.Add(() => BenchmarkRaycast(), "Raycast", 5);
     }

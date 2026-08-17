@@ -16,6 +16,8 @@ namespace Voxels.Physics {
             get => size;
         }
 
+        public Box Box => new(transform.position + center - size / 2, transform.position + center + size / 2);
+
 
         private void Start() {
             VoxelPhysics.Instance.AddBoxCollider(this);
