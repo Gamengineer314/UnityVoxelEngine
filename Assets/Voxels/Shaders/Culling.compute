@@ -60,14 +60,14 @@ bool boundsCulling(float3 center, float3 size, float4x4 transform) {
 bool normalCulling(float3 center, float3 size, uint normalID, float4x4 transform) {
     if (normalID == NORMAL_ANY) return true;
     else {
-        float3 normal = getNormal(normalID);
-        normal = mul(transform, float4(normal, 0)).xyz;
+        float3 localNormal = getNormal(normalID);
+        float3 worldNormal = mul(transform, float4(localNormal, 0)).xyz;
 #ifdef VOXEL_ORTHOGRAPHIC
-        return dot(cameraFarPlane.xyz, normal) > 0.0001;
+        return dot(cameraFarPlane.xyz, worldNormal) > 0.0001;
 #else
-        float3 back = center - normal * size;
+        float3 back = center - localNormal * size;
         back = mul(transform, float4(back, 1)).xyz;
-        return dot(back - cameraPosition.xyz, normal) < 0;
+        return dot(back - cameraPosition.xyz, worldNormal) < 0;
 #endif
     }
 }
