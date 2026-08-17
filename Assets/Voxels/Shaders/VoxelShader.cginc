@@ -31,7 +31,7 @@ struct VoxelData {
     float3 position; // World position
     uint width; // Face size
     uint height;
-    uint lightLevel;
+    float lightLevel;
     float3 normal;
     float3 tangent1;
     float3 tangent2;
@@ -48,7 +48,8 @@ struct VoxelV2F {
     float4 vertex : SV_POSITION;
 #ifdef _VOXEL_TEXTURE_ON
     float2 uv : TEXCOORD0;
-    nointerpolation uint3 texData : TEXCOORD1; // x: offset, y: width, z: light level
+    nointerpolation uint2 texData : TEXCOORD1; // x: offset, y: width
+    nointerpolation float lightLevel : TEXCOORD2;
 #else
     nointerpolation fixed4 color : COLOR;
 #endif
@@ -111,7 +112,7 @@ VoxelData unpackVertex(uint vertexID: SV_VertexID, uint instanceID: SV_InstanceI
     o.position = position;
     o.width = width;
     o.height = height;
-    o.lightLevel = lightLevels[normalID];
+    o.lightLevel = (normal.y + 4) * 0.2;
     o.normal = normal;
     o.tangent1 = tangent1;
     o.tangent2 = tangent2;
@@ -131,10 +132,11 @@ VoxelV2F voxelVertex(VoxelData d) {
     o.vertex = float4(d.position, 1);
 #ifdef _VOXEL_TEXTURE_ON
     o.uv = d.facePosition;
-    o.texData = uint3(d.colorIndex, d.width, d.lightLevel);
+    o.texData = uint2(d.colorIndex, d.width);
+    o.lightLevel = d.lightLevel;
 #else
     o.color = d.color;
-    o.color.xyz *= d.lightLevel / 15.0; // Simple lighting depending on the orientation
+    o.color.xyz *= d.lightLevel; // Simple lighting depending on the orientation
 #endif
     o.vertex = mul(UNITY_MATRIX_VP, o.vertex);
 
@@ -166,7 +168,7 @@ fixed4 voxelFragment(VoxelV2F i) {
 #ifdef _VOXEL_TEXTURE_ON
     uint2 uv = (uint2)i.uv;
     fixed4 color = getColor(colors[i.texData.x + uv.y * i.texData.y + uv.x]);
-    color.xyz *= i.texData.z / 15.0;
+    color.xyz *= i.lightLevel;
     return color;
 #else
     return i.color;
