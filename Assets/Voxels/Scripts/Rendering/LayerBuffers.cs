@@ -19,7 +19,7 @@ namespace Voxels.Rendering {
             public NativeList<VoxelChunk> chunks;
             public NativeList<int2> chunkLinks; // Prev and next chunk of each chunk
             public NativeList<int> firstChunks; // First chunk of each mesh
-            public NativeList<float4x4> transforms;
+            public NativeList<Matrix4x4> transforms;
             public BufferAllocator transformsAllocator;
             public BufferAllocator renderedTransformsAllocator;
             public NativeList<int2> allocatorIndices; // Index of the memory chunk in [transformsAllocator] and [renderedTransformsAllocator] for each mesh
@@ -33,7 +33,7 @@ namespace Voxels.Rendering {
 
         public unsafe LayerBuffers(ShaderParameters parameters) {
             chunksBuffer = new(GraphicsBuffer.Target.Structured, BufferUtility.minLength, sizeof(VoxelChunk));
-            transformsBuffer = new(GraphicsBuffer.Target.Structured, BufferUtility.minLength, sizeof(float4x4));
+            transformsBuffer = new(GraphicsBuffer.Target.Structured, BufferUtility.minLength, sizeof(Matrix4x4));
             renderedTransformsSize = BufferUtility.minLength;
             arrays.chunks = new(Allocator.Persistent);
             arrays.chunkLinks = new(Allocator.Persistent);
@@ -231,11 +231,13 @@ namespace Voxels.Rendering {
         /// <param name="meshIndex">Index of the mesh if instanced, 0 otherwise</param>
         /// <param name="instanceIndex">Index of the instance</param>
         /// <param name="transform">Transform matrix of the instance</param>
-        public void UpdateTransform(int meshIndex, int instanceIndex, float4x4 transform) {
+        public void UpdateTransform(int meshIndex, int instanceIndex, Matrix4x4 transform) {
             int index = instanceIndex;
             if (arrays.allocatorIndices.IsCreated) index += arrays.transformsAllocator[arrays.allocatorIndices[meshIndex].x].start;
-            arrays.transforms[index] = transform;
-            transformsBuffer.SetData(arrays.transforms.AsArray(), index, index, 1);
+            if (arrays.transforms[index] != transform) {
+                arrays.transforms[index] = transform;
+                transformsBuffer.SetData(arrays.transforms.AsArray(), index, index, 1);
+            }
         }
 
 

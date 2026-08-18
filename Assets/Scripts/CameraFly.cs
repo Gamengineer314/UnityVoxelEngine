@@ -36,7 +36,6 @@ public class CameraFly : MonoBehaviour {
             testSphere.transform.position = hit.point;
         }
         else {
-            Debug.Log("No hit");
             testSphere.SetActive(false);
         }
     }

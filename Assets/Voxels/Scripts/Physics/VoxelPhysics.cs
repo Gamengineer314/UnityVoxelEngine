@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Unity.Collections;
 using Unity.Mathematics;
 using UnityEngine;
 using Voxels.Collections;
@@ -18,6 +19,7 @@ namespace Voxels.Physics {
 
         private PhysicsData data;
         private readonly Dictionary<VoxelColumns, BinaryOctree> meshOctrees = new();
+        private readonly Dictionary<VoxelColumns, int> referenceCounters = new();
         private readonly List<VoxelMeshCollider> meshColliders = new();
         private readonly List<VoxelBoxCollider> boxColliders = new();
 
@@ -34,6 +36,100 @@ namespace Voxels.Physics {
             foreach (BinaryOctree octree in meshOctrees.Values) {
                 octree.Dispose();
             }
+        }
+
+
+        private void LateUpdate() {
+            for (int i = meshColliders.Count - 1; i >= 0; i--) {
+                VoxelMeshCollider collider = meshColliders[i];
+                Matrix4x4 transform = collider.transform.localToWorldMatrix;
+                if (transform != collider.prevTransform || collider.gameObject.layer != data.colliders[collider.index].layer) {
+                    collider.prevTransform = transform;
+                    RemoveMeshCollider(collider);
+                    AddMeshCollider(collider);
+                }
+            }
+            for (int i = boxColliders.Count - 1; i >= 0; i--) {
+                VoxelBoxCollider collider = boxColliders[i];
+                Vector3 transform = collider.transform.position;
+                if (transform != collider.prevTransform || collider.gameObject.layer != data.colliders[collider.index].layer) {
+                    collider.prevTransform = transform;
+                    RemoveBoxCollider(collider);
+                    AddBoxCollider(collider);
+                }
+            }
+        }
+
+
+        /// <summary>
+        /// Increment the reference counter of a mesh
+        /// </summary>
+        /// <param name="voxels">Voxels of the mesh</param>
+        internal void AddReference(VoxelColumns voxels) {
+            referenceCounters[voxels] = referenceCounters.GetValueOrDefault(voxels, 0) + 1;
+        }
+
+        /// <summary>
+        /// Decrement the reference counter of a mesh
+        /// </summary>
+        /// <param name="voxels">Voxels of the mesh</param>
+        internal void RemoveReference(VoxelColumns voxels) {
+            int counter = referenceCounters[voxels] - 1;
+            if (counter == 0) {
+                meshOctrees[voxels].Dispose();
+                meshOctrees.Remove(voxels);
+                referenceCounters.Remove(voxels);
+            }
+            else referenceCounters[voxels] = counter;
+        }
+
+
+        /// <summary>
+        /// Add a mesh collider
+        /// </summary>
+        /// <param name="collider">The collider</param>
+        internal void AddMeshCollider(VoxelMeshCollider collider) {
+            meshColliders.Add(collider);
+            if (!meshOctrees.TryGetValue(collider.voxels, out BinaryOctree octree)) {
+                octree = new BinaryOctree(collider.voxels);
+                meshOctrees[collider.voxels] = octree;
+            }
+            collider.index = PhysicsData.AddMeshCollider(ref data, new BinaryOctree(octree, collider.transform), collider.gameObject.layer);
+            collider.prevTransform = collider.transform.localToWorldMatrix;
+        }
+
+        /// <summary>
+        /// Add a box collider
+        /// </summary>
+        /// <param name="collider">The collider</param>
+        internal void AddBoxCollider(VoxelBoxCollider collider) {
+            boxColliders.Add(collider);
+            collider.index = PhysicsData.AddBoxCollider(ref data, collider.Box, collider.gameObject.layer);
+            collider.prevTransform = collider.transform.position;
+        }
+
+        /// <summary>
+        /// Remove a mesh collider
+        /// </summary>
+        /// <param name="collider">The collider</param>
+        internal void RemoveMeshCollider(VoxelMeshCollider collider) {
+            int index = collider.index;
+            int swapIndex = meshColliders[^1].index;
+            int meshIndex = PhysicsData.RemoveMeshCollider(ref data, index, swapIndex);
+            meshColliders.RemoveAtSwapBack(meshIndex);
+            collider.index = -1;
+        }
+
+        /// <summary>
+        /// Remove a box collider
+        /// </summary>
+        /// <param name="collider">The collider</param>
+        internal void RemoveBoxCollider(VoxelBoxCollider collider) {
+            int index = collider.index;
+            int swapIndex = boxColliders[^1].index;
+            int boxIndex = PhysicsData.RemoveBoxCollider(ref data, index, swapIndex);
+            boxColliders.RemoveAtSwapBack(boxIndex);
+            collider.index = -1;
         }
 
 
@@ -54,29 +150,6 @@ namespace Voxels.Physics {
             };
             hitInfo = new VoxelRaycastHit(point, normal, collider);
             return hit;
-        }
-
-
-        /// <summary>
-        /// Add a mesh collider
-        /// </summary>
-        /// <param name="collider">The collider</param>
-        internal void AddMeshCollider(VoxelMeshCollider collider) {
-            meshColliders.Add(collider);
-            if (!meshOctrees.TryGetValue(collider.mesh.Voxels, out BinaryOctree octree)) {
-                octree = new BinaryOctree(collider.mesh.Voxels);
-                meshOctrees[collider.mesh.Voxels] = octree;
-            }
-            PhysicsData.AddMeshCollider(ref data, new BinaryOctree(octree, collider.transform), collider.gameObject.layer);
-        }
-
-        /// <summary>
-        /// Add a box collider
-        /// </summary>
-        /// <param name="collider">The collider</param>
-        internal void AddBoxCollider(VoxelBoxCollider collider) {
-            boxColliders.Add(collider);
-            PhysicsData.AddBoxCollider(ref data, collider.Box, collider.gameObject.layer);
         }
     }
 

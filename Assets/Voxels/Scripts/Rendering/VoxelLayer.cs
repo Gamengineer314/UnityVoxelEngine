@@ -44,13 +44,11 @@ namespace Voxels.Rendering {
                 List<VoxelMesh> meshInstances = instances[i];
                 for (int j = meshInstances.Count - 1; j >= 0; j--) {
                     VoxelMesh instance = meshInstances[j];
+                    layerBuffers.UpdateTransform(i, j, instance.transform.localToWorldMatrix);
                     if (instance.gameObject.layer != layer) {
                         RemoveInstance(instance);
                         instance.layer = VoxelRenderer.GetRenderer(instance).GetLayer(instance);
                         instance.layer.AddInstance(instance);
-                    }
-                    else if (instance.LateTransformChanged) {
-                        layerBuffers.UpdateTransform(i, j, instance.transform.localToWorldMatrix);
                     }
                 }
             }
@@ -82,7 +80,8 @@ namespace Voxels.Rendering {
             }
             instanceIndices[instance] = instanceIndex;
             instances[meshIndex].Add(instance);
-            layerBuffers.UpdateTransform(meshIndex, instanceIndex, instance.transform.localToWorldMatrix);
+            Matrix4x4 transform = instance.transform.localToWorldMatrix;
+            layerBuffers.UpdateTransform(meshIndex, instanceIndex, transform);
         }
 
 

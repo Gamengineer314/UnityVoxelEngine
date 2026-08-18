@@ -12,29 +12,6 @@ namespace Voxels.Rendering {
         internal GenerationCommand command;
         public bool generated { get; internal set; }
 
-        /// <summary>
-        /// Whether the transform has changed during the previous frame
-        /// </summary>
-        public bool transformChanged { get; private set; }
-        private int lastFrame;
-
-        /// <summary>
-        /// Whether the transform has changed during the current frame.
-        /// This property updates [transformChanged] the first time it's called each frame.
-        /// It should therefore only be accessed in LateUpdate after all transform changes.
-        /// </summary>
-        public bool LateTransformChanged {
-            get {
-                int frame = Time.frameCount;
-                if (frame != lastFrame) {
-                    lastFrame = frame;
-                    transformChanged = transform.hasChanged;
-                    transform.hasChanged = false;
-                }
-                return transformChanged;
-            }
-        }
-
 
         public VoxelColumns Voxels {
             get => voxelsAsset ? voxelsAsset.voxels : command.voxels;
@@ -64,10 +41,12 @@ namespace Voxels.Rendering {
             }
         }
 
+#if UNITY_EDITOR
         internal void OnInspectorChanged() {
             RemoveFromLayer();
             Generate();
         }
+#endif
 
 
         internal void Start() {
@@ -103,22 +82,23 @@ namespace Voxels.Rendering {
         }
 
         private void AddToLayer(GenerationCommand command) {
-            if (this && isActiveAndEnabled && layer == null && command.Equals(this.command)) {
-                VoxelRenderer renderer = VoxelRenderer.GetRenderer(this);
+            if (!this || generated || !command.Equals(this.command)) return;
+            VoxelRenderer renderer = VoxelRenderer.GetRenderer(this);
+            renderer.meshBuffers.AddReference(command);
+            generated = true;
+            if (isActiveAndEnabled) {
                 layer = renderer.GetLayer(this);
                 layer.AddInstance(this);
-                renderer.meshBuffers.AddReference(command);
-                generated = true;
             }
         }
 
         private void RemoveFromLayer() {
-            if (layer != null) {
-                layer.RemoveInstance(this);
-                layer = null;
+            if (generated) {
                 VoxelRenderer.GetRenderer(this).meshBuffers.RemoveReference(command);
                 generated = false;
             }
+            layer?.RemoveInstance(this);
+            layer = null;
         }
 
 

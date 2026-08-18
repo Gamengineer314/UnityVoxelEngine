@@ -10,7 +10,7 @@ namespace Voxels.Physics {
     /// </summary>
     [BurstCompile]
     internal struct PhysicsData {
-        private NativeList<LinkedCollider> colliders; // Linked lists of colliders
+        public NativeList<LinkedCollider> colliders; // Linked lists of colliders
         private NativeList<int> octree; // 9 ints per node pointing to the index of its first collider and its children
         private int root; // Octree root
         private int reusableCollider; // Index of the first reusable collider in [colliders]
@@ -20,8 +20,8 @@ namespace Voxels.Physics {
         private readonly float size; // Size of the octree
 
         // Specific data for each collider type
-        private NativeList<BinaryOctree> meshColliders;
-        private NativeList<Box> boxColliders;
+        public NativeList<BinaryOctree> meshColliders;
+        public NativeList<Box> boxColliders;
 
 
         public PhysicsData(int maxDepth, float3 offset, float size) {
@@ -50,7 +50,7 @@ namespace Voxels.Physics {
         /// </summary>
         /// <param name="octree">Octree representing the collider</param>
         /// <param name="layer">Layer of the collider</param>
-        /// <returns>Index of the collider</returns>
+        /// <returns>Index of the collider in the collider array</returns>
         public int AddMeshCollider(BinaryOctree octree, int layer) {
             int index = AddCollider(octree.bounds);
             colliders[index] = new LinkedCollider(ColliderType.Mesh, meshColliders.Length, 1 << layer, colliders[index].next);
@@ -63,7 +63,7 @@ namespace Voxels.Physics {
         /// </summary>
         /// <param name="box">The box</param>
         /// <param name="layer">Layer of the collider</param>
-        /// <returns>Index of the collider</returns>
+        /// <returns>Index of the collider in the collider array</returns>
         public int AddBoxCollider(Box box, int layer) {
             int index = AddCollider(box);
             colliders[index] = new LinkedCollider(ColliderType.Box, boxColliders.Length, 1 << layer, colliders[index].next);
@@ -119,14 +119,16 @@ namespace Voxels.Physics {
         /// <summary>
         /// Remove a mesh collider
         /// </summary>
-        /// <param name="index">Index of the collider</param>
+        /// <param name="index">Index of the collider in the collider array</param>
         /// <param name="swapIndex">Index of the last mesh collider</param>
-        public void RemoveMeshCollider(int index, int swapIndex) {
+        /// <returns>Index of the collider in the mesh collider array</returns>
+        public int RemoveMeshCollider(int index, int swapIndex) {
             int meshIndex = colliders[index].index;
-            root = RemoveCollider(root, size / 2, maxDepth, index, meshColliders[meshIndex].bounds);
+            root = RemoveCollider(root, size / 2, index, meshColliders[meshIndex].bounds);
             meshColliders.RemoveAtSwapBack(meshIndex);
             if (meshIndex < meshColliders.Length)
-                colliders[swapIndex] = new LinkedCollider(ColliderType.Mesh, meshIndex, colliders[swapIndex].layerMask, colliders[swapIndex].next);
+                colliders[swapIndex] = new LinkedCollider(ColliderType.Mesh, meshIndex, colliders[swapIndex].layer, colliders[swapIndex].next);
+            return meshIndex;
         }
 
         /// <summary>
@@ -134,16 +136,46 @@ namespace Voxels.Physics {
         /// </summary>
         /// <param name="index">Index of the collider in the collider array</param>
         /// <param name="swapIndex">Index of the last box collider</param>
-        public void RemoveBoxCollider(int index, int swapIndex) {
+        /// <returns>Index of the collider in the box collider array</returns>
+        public int RemoveBoxCollider(int index, int swapIndex) {
             int boxIndex = colliders[index].index;
-            root = RemoveCollider(root, size / 2, maxDepth, index, boxColliders[boxIndex]);
+            root = RemoveCollider(root, size / 2, index, boxColliders[boxIndex]);
             boxColliders.RemoveAtSwapBack(boxIndex);
             if (boxIndex < boxColliders.Length)
-                colliders[swapIndex] = new LinkedCollider(ColliderType.Box, boxIndex, colliders[swapIndex].layerMask, colliders[swapIndex].next);
+                colliders[swapIndex] = new LinkedCollider(ColliderType.Box, boxIndex, colliders[swapIndex].layer, colliders[swapIndex].next);
+            return boxIndex;
         }
 
-        private int RemoveCollider(int node, float childSize, int maxDepth, int index, Box bounds) {
-            return 0;
+        private int RemoveCollider(int node, float childSize, int index, Box bounds) {
+            bool3 minAfterCenter = bounds.min > childSize;
+            bool3 maxBeforeCenter = bounds.max < childSize;
+            if (maxDepth > 0 && math.all(minAfterCenter | maxBeforeCenter)) { // The collider fits in a child
+                int childNode = 9 * node + 1 + math.bitmask(new bool4(minAfterCenter, false));
+                Box childBounds = bounds - math.select(0, childSize, minAfterCenter);
+                octree[childNode] = RemoveCollider(octree[childNode], childSize / 2, index, childBounds);
+            }
+            else { // Remove in this node
+                int i = octree[9 * node];
+                if (i == index) {
+                    octree[9 * node] = colliders[index].next;
+                }
+                else {
+                    while (colliders[i].next != index) {
+                        i = colliders[i].next;
+                    }
+                    colliders[i] = new LinkedCollider(colliders[i].type, colliders[i].index, colliders[i].layer, colliders[index].next);
+                }
+                colliders[index] = new LinkedCollider(default, 0, 0, reusableCollider);
+                reusableCollider = index;
+            }
+
+            // Remove node if empty
+            for (int i = 0; i < 9; i++) {
+                if (octree[9 * node + i] != -1) return node;
+            }
+            octree[9 * node] = reusableNode;
+            reusableNode = node;
+            return -1;
         }
 
 
@@ -191,7 +223,7 @@ namespace Voxels.Physics {
             
             // Raycast in all colliders in this node
             for (int i = octree[9 * node]; i != -1; i = colliders[i].next) {
-                if ((colliders[i].layerMask & layerMask) == 0) continue;
+                if ((layerMask & 1 << colliders[i].layer) == 0) continue;
                 int axis = 0;
                 bool hit = colliders[i].type switch {
                     ColliderType.Mesh => meshColliders[colliders[i].index].Raycast(origin, direction, inverse, ref distance, out axis),
@@ -259,11 +291,11 @@ namespace Voxels.Physics {
             => @this.AddBoxCollider(box, layer);
 
         [BurstCompile]
-        public static void RemoveMeshCollider(ref PhysicsData @this, int index, int swapIndex)
+        public static int RemoveMeshCollider(ref PhysicsData @this, int index, int swapIndex)
             => @this.RemoveMeshCollider(index, swapIndex);
 
         [BurstCompile]
-        public static void RemoveBoxCollider(ref PhysicsData @this, int index, int swapIndex)
+        public static int RemoveBoxCollider(ref PhysicsData @this, int index, int swapIndex)
             => @this.RemoveBoxCollider(index, swapIndex);
 
         [BurstCompile]
@@ -273,16 +305,16 @@ namespace Voxels.Physics {
         ) => @this.Raycast(origin, direction, maxDistance, layerMask, out point, out normal, out type, out index);
 
 
-        private readonly struct LinkedCollider {
+        public readonly struct LinkedCollider {
             public readonly ColliderType type;
             public readonly int index;
-            public readonly int layerMask;
+            public readonly int layer;
             public readonly int next;
 
-            public LinkedCollider(ColliderType type, int index, int layerMask, int next) {
+            public LinkedCollider(ColliderType type, int index, int layer, int next) {
                 this.type = type;
                 this.index = index;
-                this.layerMask = layerMask;
+                this.layer = layer;
                 this.next = next;
             }
         }
