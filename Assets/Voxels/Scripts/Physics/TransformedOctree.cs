@@ -1,6 +1,4 @@
-using System;
 using UnityEngine;
-using Unity.Burst;
 using Unity.Collections;
 using Unity.Mathematics;
 using Voxels.Collections;
@@ -8,14 +6,10 @@ using Voxels.Collections;
 namespace Voxels.Physics {
     
     /// <summary>
-    /// Octree of voxels without data
+    /// Octree of voxels with a transform
     /// </summary>
-    [BurstCompile]
-    internal struct BinaryOctree : IDisposable {
-        private const int full = -1;
-        private const int empty = -2;
-
-        private NativeList<int> children; // 8 ints per node pointing to its children
+    internal readonly struct TransformedOctree {
+        private readonly NativeList<int> children; // 8 ints per node pointing to its children
         private readonly int root;
         private readonly int size;
         public readonly Box bounds; // Bounding box in world coordinates
@@ -26,27 +20,7 @@ namespace Voxels.Physics {
         private readonly float3 scale;
 
 
-        /// <summary>
-        /// Create an octree from a voxels asset
-        /// </summary>
-        /// <param name="voxels">The voxels</param>
-        public BinaryOctree(VoxelColumns voxels) {
-            children = new NativeList<int>(Allocator.Persistent);
-            root = empty;
-            size = math.ceilpow2(math.max(voxels.size.x, math.max(voxels.size.y, voxels.size.z)));
-            bounds = new Box(voxels.offset, voxels.offset + voxels.size);
-            position = voxels.offset;
-            scale = 1;
-            transpose = new int3(0, 1, 2);
-            Add(in voxels, ref children, ref root, size);
-        }
-
-        /// <summary>
-        /// Create a view of an octree with a transform
-        /// </summary>
-        /// <param name="octree">The other octree</param>
-        /// <param name="localTransform">Transformation from the other octree to the view</param>
-        public BinaryOctree(BinaryOctree octree, Transform transform) {
+        public TransformedOctree(OctreeBuilder octree, VoxelColumns voxels, Transform transform) {
             children = octree.children;
             root = octree.root;
             size = octree.size;
@@ -55,69 +29,10 @@ namespace Voxels.Physics {
             scale = transform.lossyScale * math.sign(transposeComponents);
             transpose = (int3)math.round(math.abs(transposeComponents)) - 1;
             bounds = default;
-            position = ToWorld(octree.position, true); // Add asset offset
-            float3 min = ToWorld(octree.bounds.min - octree.position, true);
-            float3 max = ToWorld(octree.bounds.max - octree.position, true);
+            position = ToWorld(voxels.offset, true); // Add offset
+            float3 min = ToWorld(0, true);
+            float3 max = ToWorld(voxels.size, true);
             bounds = new Box(math.min(min, max), math.max(min, max));
-        }
-
-        public void Dispose() {
-            children.Dispose();
-        }
-
-
-        [BurstCompile]
-        private static void Add(in VoxelColumns voxels, ref NativeList<int> children, ref int root, int size) {
-            int reusable = -1;
-            for (int z = 0; z < voxels.size.z; z++) {
-                for (int x = 0; x < voxels.size.x; x++) {
-                    foreach (Voxel voxel in voxels.GetColumn(x, z)) {
-                        if (Voxel.Color32Equals(voxel.color, Voxel.ghost)) continue;
-                        int3 coords = new(x, voxel.y, z);
-                        root = Add(root, coords, size >> 1, children, ref reusable);
-                    }
-                }
-            }
-        }
-
-        private static int Add(int node, int3 coords, int childSize, NativeList<int> children, ref int reusable) {
-            // Add node if empty
-            if (node == empty) {
-                if (reusable == -1) {
-                    node = children.Length / 8;
-                    children.Length += 8;
-                }
-                else {
-                    node = reusable;
-                    reusable = children[8 * reusable];
-                }
-                for (int i = 0; i < 8; i++) {
-                    children[8 * node + i] = empty;
-                }
-            }
-
-            // Find child
-            bool3 side = coords >= childSize;
-            int childNode = 8 * node + math.bitmask(new bool4(side, false));
-
-            // Add in child
-            int child;
-            if (childSize == 1) {
-                child = full;
-            }
-            else {
-                int3 childCoords = math.select(coords, coords - childSize, side);
-                child = Add(children[childNode], childCoords, childSize >> 1, children, ref reusable);
-            }
-            children[childNode] = child;
-
-            // Remove node if all children are full
-            for (int i = 0; i < 8; i++) {
-                if (children[8 * node + i] != full) return node;
-            }
-            children[8 * node] = reusable;
-            reusable = node;
-            return full;
         }
 
 
@@ -145,26 +60,21 @@ namespace Voxels.Physics {
             float3 localDirection = ToLocal(direction, false);
             float localDistance = distance - boundsDistance;
             int localAxis = ToLocal(axis);
-            bool hit = Raycast(
-                root, size >> 1,
-                localOrigin, localDirection, 1 / localDirection, ref localDistance, ref localAxis
-            );
+            bool hit = Raycast(root, size, localOrigin, localDirection, 1 / localDirection, ref localDistance, ref localAxis);
             distance = localDistance + boundsDistance;
             axis = ToWorld(localAxis);
             return hit;
         }
 
-        private readonly bool Raycast(
-            int node, int childSize,
-            float3 origin, float3 direction, float3 inverse, ref float distance, ref int axis
-        ) {
-            if (node == empty) return false;
-            if (node == full) { // Hit at this point
+        private readonly bool Raycast(int node, int size, float3 origin, float3 direction, float3 inverse, ref float distance, ref int axis) {
+            if (node == -1) return false;
+            if (node == -2) { // Hit at this point
                 distance = 0;
                 return true;
             }
 
             // Raycast in children traversed by the ray
+            int childSize = size / 2;
             float3 distances = (childSize - origin) * inverse;
             distances = math.select(distances, float.PositiveInfinity, distances < 0);
             bool3 side = origin > childSize;
@@ -175,7 +85,7 @@ namespace Voxels.Physics {
                 int childNode = children[8 * node + math.bitmask(new bool4(side, false))];
                 float3 offset = math.select(0, childSize, side);
                 float childDistance = distance - addedDistance;
-                if (Raycast(childNode, childSize >> 1, childOrigin - offset, direction, inverse, ref childDistance, ref axis)) {
+                if (Raycast(childNode, childSize, childOrigin - offset, direction, inverse, ref childDistance, ref axis)) {
                     distance = childDistance + addedDistance;
                     return true;
                 }
@@ -192,7 +102,7 @@ namespace Voxels.Physics {
                 if (addedDistance > distance) break;
                 childOrigin = origin + direction * addedDistance;
                 childOrigin[axis] = childSize;
-                if (!math.all(childOrigin >= 0 & childOrigin <= 2 * childSize)) break;
+                if (!math.all(childOrigin >= 0 & childOrigin <= size)) break;
                 side[axis] = !side[axis];
                 distances[axis] = float.PositiveInfinity;
             }

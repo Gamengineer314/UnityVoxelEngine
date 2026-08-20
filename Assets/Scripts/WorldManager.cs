@@ -1,5 +1,6 @@
 using UnityEngine;
 using Voxels.Collections;
+using Voxels.Physics;
 using Voxels.Rendering;
 using Stopwatch = System.Diagnostics.Stopwatch;
 
@@ -7,7 +8,8 @@ public class WorldManager : MonoBehaviour {
     public const int horizontalSize = 4096; // Number of blocks in x and z dimensions
 
     [SerializeField] private TerrainGenerator terrainGenerator;
-    [SerializeField] private VoxelMesh terrain;
+    [SerializeField] private VoxelMesh terrainMesh;
+    [SerializeField] private VoxelMeshCollider terrainCollider;
     [SerializeField] private Material terrainMaterial;
     private VoxelColumns voxels;
 
@@ -23,10 +25,14 @@ public class WorldManager : MonoBehaviour {
 
         // Generate mesh
         watch.Restart();
-        terrain.Voxels = voxels;
-        terrain.CompleteGeneration();
-        
+        terrainMesh.Voxels = voxels;
+        terrainMesh.CompleteGeneration();
         Debug.Log($"Mesh generated in {watch.ElapsedMilliseconds} ms");
+
+        watch.Restart();
+        terrainCollider.Voxels = voxels;
+        terrainCollider.CompleteGeneration();
+        Debug.Log($"Octree generated in {watch.ElapsedMilliseconds} ms");
     }
 
     private void OnDestroy() {

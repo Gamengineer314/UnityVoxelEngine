@@ -18,7 +18,8 @@ namespace Voxels.Physics {
         [SerializeField] private int maxDepth = 10;
 
         private PhysicsData data;
-        private readonly Dictionary<VoxelColumns, BinaryOctree> meshOctrees = new();
+        internal OctreeGenerator generator { get; private set; }
+        private readonly Dictionary<VoxelColumns, OctreeBuilder> octrees = new();
         private readonly Dictionary<VoxelColumns, int> referenceCounters = new();
         private readonly List<VoxelMeshCollider> meshColliders = new();
         private readonly List<VoxelBoxCollider> boxColliders = new();
@@ -28,32 +29,31 @@ namespace Voxels.Physics {
             if (Instance) throw new InvalidOperationException("Can't create more than one VoxelPhysics in a scene");
             Instance = this;
             data = new PhysicsData(maxDepth, offset, size);
+            generator = new OctreeGenerator(octrees);
         }
 
         private void OnDestroy() {
             Instance = null;
             data.Dispose();
-            foreach (BinaryOctree octree in meshOctrees.Values) {
+            generator.Dispose();
+            foreach (OctreeBuilder octree in octrees.Values) {
                 octree.Dispose();
             }
         }
 
 
         private void LateUpdate() {
+            generator.Update();
             for (int i = meshColliders.Count - 1; i >= 0; i--) {
                 VoxelMeshCollider collider = meshColliders[i];
-                Matrix4x4 transform = collider.transform.localToWorldMatrix;
-                if (transform != collider.prevTransform || collider.gameObject.layer != data.colliders[collider.index].layer) {
-                    collider.prevTransform = transform;
+                if (collider.transform.localToWorldMatrix != collider.prevTransform || collider.gameObject.layer != data.colliders[collider.index].layer) {
                     RemoveMeshCollider(collider);
                     AddMeshCollider(collider);
                 }
             }
             for (int i = boxColliders.Count - 1; i >= 0; i--) {
                 VoxelBoxCollider collider = boxColliders[i];
-                Vector3 transform = collider.transform.position;
-                if (transform != collider.prevTransform || collider.gameObject.layer != data.colliders[collider.index].layer) {
-                    collider.prevTransform = transform;
+                if (collider.transform.position != collider.prevTransform || collider.gameObject.layer != data.colliders[collider.index].layer) {
                     RemoveBoxCollider(collider);
                     AddBoxCollider(collider);
                 }
@@ -76,8 +76,8 @@ namespace Voxels.Physics {
         internal void RemoveReference(VoxelColumns voxels) {
             int counter = referenceCounters[voxels] - 1;
             if (counter == 0) {
-                meshOctrees[voxels].Dispose();
-                meshOctrees.Remove(voxels);
+                octrees[voxels].Dispose();
+                octrees.Remove(voxels);
                 referenceCounters.Remove(voxels);
             }
             else referenceCounters[voxels] = counter;
@@ -90,11 +90,8 @@ namespace Voxels.Physics {
         /// <param name="collider">The collider</param>
         internal void AddMeshCollider(VoxelMeshCollider collider) {
             meshColliders.Add(collider);
-            if (!meshOctrees.TryGetValue(collider.voxels, out BinaryOctree octree)) {
-                octree = new BinaryOctree(collider.voxels);
-                meshOctrees[collider.voxels] = octree;
-            }
-            collider.index = PhysicsData.AddMeshCollider(ref data, new BinaryOctree(octree, collider.transform), collider.gameObject.layer);
+            TransformedOctree octree = new(octrees[collider.voxels], collider.voxels, collider.transform);
+            collider.index = PhysicsData.AddMeshCollider(ref data, octree, collider.gameObject.layer);
             collider.prevTransform = collider.transform.localToWorldMatrix;
         }
 

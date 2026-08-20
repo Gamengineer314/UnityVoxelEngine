@@ -20,7 +20,7 @@ namespace Voxels.Physics {
         private readonly float size; // Size of the octree
 
         // Specific data for each collider type
-        public NativeList<BinaryOctree> meshColliders;
+        public NativeList<TransformedOctree> meshColliders;
         public NativeList<Box> boxColliders;
 
 
@@ -51,7 +51,7 @@ namespace Voxels.Physics {
         /// <param name="octree">Octree representing the collider</param>
         /// <param name="layer">Layer of the collider</param>
         /// <returns>Index of the collider in the collider array</returns>
-        public int AddMeshCollider(BinaryOctree octree, int layer) {
+        private int AddMeshCollider(TransformedOctree octree, int layer) {
             int index = AddCollider(octree.bounds);
             colliders[index] = new LinkedCollider(ColliderType.Mesh, meshColliders.Length, 1 << layer, colliders[index].next);
             meshColliders.Add(octree);
@@ -64,7 +64,7 @@ namespace Voxels.Physics {
         /// <param name="box">The box</param>
         /// <param name="layer">Layer of the collider</param>
         /// <returns>Index of the collider in the collider array</returns>
-        public int AddBoxCollider(Box box, int layer) {
+        private int AddBoxCollider(Box box, int layer) {
             int index = AddCollider(box);
             colliders[index] = new LinkedCollider(ColliderType.Box, boxColliders.Length, 1 << layer, colliders[index].next);
             boxColliders.Add(box);
@@ -82,11 +82,11 @@ namespace Voxels.Physics {
                 index = reusableCollider;
                 reusableCollider = colliders[index].next;
             }
-            root = AddCollider(root, size / 2, maxDepth, index, bounds - offset);
+            root = AddCollider(root, size, maxDepth, index, bounds - offset);
             return index;
         }
 
-        private int AddCollider(int node, float childSize, int maxDepth, int index, Box bounds) {
+        private int AddCollider(int node, float size, int maxDepth, int index, Box bounds) {
             if (node == -1) { // Create new node
                 if (reusableNode == -1) {
                     node = octree.Length / 9;
@@ -101,12 +101,13 @@ namespace Voxels.Physics {
                 }
             }
 
+            float childSize = size / 2;
             bool3 minAfterCenter = bounds.min > childSize;
             bool3 maxBeforeCenter = bounds.max < childSize;
             if (maxDepth > 0 && math.all(minAfterCenter | maxBeforeCenter)) { // The collider fits in a child
                 int childNode = 9 * node + 1 + math.bitmask(new bool4(minAfterCenter, false));
                 Box childBounds = bounds - math.select(0, childSize, minAfterCenter);
-                octree[childNode] = AddCollider(octree[childNode], childSize / 2, maxDepth - 1, index, childBounds);
+                octree[childNode] = AddCollider(octree[childNode], childSize, maxDepth - 1, index, childBounds);
             }
             else { // Add in this node
                 colliders[index] = new LinkedCollider(default, 0, 0, octree[9 * node]);
@@ -122,9 +123,9 @@ namespace Voxels.Physics {
         /// <param name="index">Index of the collider in the collider array</param>
         /// <param name="swapIndex">Index of the last mesh collider</param>
         /// <returns>Index of the collider in the mesh collider array</returns>
-        public int RemoveMeshCollider(int index, int swapIndex) {
+        private int RemoveMeshCollider(int index, int swapIndex) {
             int meshIndex = colliders[index].index;
-            root = RemoveCollider(root, size / 2, index, meshColliders[meshIndex].bounds);
+            root = RemoveCollider(root, size, index, meshColliders[meshIndex].bounds);
             meshColliders.RemoveAtSwapBack(meshIndex);
             if (meshIndex < meshColliders.Length)
                 colliders[swapIndex] = new LinkedCollider(ColliderType.Mesh, meshIndex, colliders[swapIndex].layer, colliders[swapIndex].next);
@@ -137,22 +138,23 @@ namespace Voxels.Physics {
         /// <param name="index">Index of the collider in the collider array</param>
         /// <param name="swapIndex">Index of the last box collider</param>
         /// <returns>Index of the collider in the box collider array</returns>
-        public int RemoveBoxCollider(int index, int swapIndex) {
+        private int RemoveBoxCollider(int index, int swapIndex) {
             int boxIndex = colliders[index].index;
-            root = RemoveCollider(root, size / 2, index, boxColliders[boxIndex]);
+            root = RemoveCollider(root, size, index, boxColliders[boxIndex]);
             boxColliders.RemoveAtSwapBack(boxIndex);
             if (boxIndex < boxColliders.Length)
                 colliders[swapIndex] = new LinkedCollider(ColliderType.Box, boxIndex, colliders[swapIndex].layer, colliders[swapIndex].next);
             return boxIndex;
         }
 
-        private int RemoveCollider(int node, float childSize, int index, Box bounds) {
+        private int RemoveCollider(int node, float size, int index, Box bounds) {
+            float childSize = size / 2;
             bool3 minAfterCenter = bounds.min > childSize;
             bool3 maxBeforeCenter = bounds.max < childSize;
             if (maxDepth > 0 && math.all(minAfterCenter | maxBeforeCenter)) { // The collider fits in a child
                 int childNode = 9 * node + 1 + math.bitmask(new bool4(minAfterCenter, false));
                 Box childBounds = bounds - math.select(0, childSize, minAfterCenter);
-                octree[childNode] = RemoveCollider(octree[childNode], childSize / 2, index, childBounds);
+                octree[childNode] = RemoveCollider(octree[childNode], childSize, index, childBounds);
             }
             else { // Remove in this node
                 int i = octree[9 * node];
@@ -162,6 +164,7 @@ namespace Voxels.Physics {
                 else {
                     while (colliders[i].next != index) {
                         i = colliders[i].next;
+                        if (i == -1) throw new Exception(":((");
                     }
                     colliders[i] = new LinkedCollider(colliders[i].type, colliders[i].index, colliders[i].layer, colliders[index].next);
                 }
@@ -191,7 +194,7 @@ namespace Voxels.Physics {
         /// <param name="type">Type of the collider that was hit</param>
         /// <param name="index">Index of the collider that was hit</param>
         /// <returns>Whether the ray hit a collider</returns>
-        public bool Raycast(
+        private bool Raycast(
             float3 origin, float3 direction, float distance, int layerMask,
             out float3 point, out float3 normal, out ColliderType type, out int index
         ) {
@@ -283,7 +286,7 @@ namespace Voxels.Physics {
         
         
         [BurstCompile]
-        public static int AddMeshCollider(ref PhysicsData @this, in BinaryOctree octree, int layer)
+        public static int AddMeshCollider(ref PhysicsData @this, in TransformedOctree octree, int layer)
             => @this.AddMeshCollider(octree, layer);
 
         [BurstCompile]
