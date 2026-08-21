@@ -139,15 +139,32 @@ namespace Voxels.Physics {
         /// <param name="hitInfo">Information about the hit point if the ray hit a collider</param>
         /// <returns>Whether the ray hit a collider</returns>
         public bool Raycast(Ray ray, float maxDistance, int layerMask, out VoxelRaycastHit hitInfo) {
-            bool hit = PhysicsData.Raycast(ref data, ray.origin, ray.direction, maxDistance, layerMask, out float3 point, out float3 normal, out ColliderType type, out int index);
-            GameObject collider = type switch {
-                ColliderType.Mesh => meshColliders[index].gameObject,
-                ColliderType.Box => boxColliders[index].gameObject,
-                _ => null  
-            };
-            hitInfo = new VoxelRaycastHit(point, normal, collider);
+            bool hit = PhysicsData.Raycast(ref data, ray.origin, ray.direction, maxDistance, layerMask, out PhysicsData.RaycastHit info);
+            hitInfo = GetInfo(info);
             return hit;
         }
+
+        /// <summary>
+        /// Move query with a box shape
+        /// </summary>
+        /// <param name="origin">Start position of the box</param>
+        /// <param name="direction">Direction of the box</param>
+        /// <param name="maxDistance">Maximum distance between the origin and the hit point</param>
+        /// <param name="layerMask">Layers of colliders that are considered</param>
+        /// <param name="hitInfo">Information about the hit point if the box hit a collider</param>
+        /// <returns>Whether the box hit a voxel</returns>
+        public bool MoveBox(Box origin, float3 direction, float maxDistance, int layerMask, out VoxelRaycastHit hitInfo) {
+            bool hit = PhysicsData.MoveBox(ref data, origin, direction, maxDistance, layerMask, out PhysicsData.RaycastHit info);
+            hitInfo = GetInfo(info);
+            return hit;
+        }
+
+        private VoxelRaycastHit GetInfo(PhysicsData.RaycastHit info)
+            => new(info.movement, info.normal, info.type switch {
+                ColliderType.Mesh => meshColliders[info.index].gameObject,
+                ColliderType.Box => boxColliders[info.index].gameObject,
+                _ => null
+            });
     }
 
 }

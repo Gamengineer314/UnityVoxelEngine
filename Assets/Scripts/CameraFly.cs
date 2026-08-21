@@ -6,6 +6,7 @@ public class CameraFly : MonoBehaviour {
     private const float ySensitivity = 1.5f;
     public float speed = 200;
     public GameObject testSphere;
+    public GameObject testCube;
 
     private float xRotation;
     private float yRotation;
@@ -31,12 +32,20 @@ public class CameraFly : MonoBehaviour {
         yRotation += Input.GetAxis("Mouse X") * xSensitivity;
         transform.rotation = Quaternion.AngleAxis(yRotation, Vector3.up) * Quaternion.AngleAxis(xRotation, Vector3.right);
 
-        if (VoxelPhysics.Instance.Raycast(new Ray(transform.position, transform.forward), float.PositiveInfinity, -1, out VoxelRaycastHit hit)) {
+        /*if (VoxelPhysics.Instance.Raycast(new Ray(transform.position, transform.forward), float.PositiveInfinity, -1, out VoxelRaycastHit hit)) {
             testSphere.SetActive(true);
-            testSphere.transform.position = hit.point;
+            testSphere.transform.position = transform.position + hit.movement;
         }
         else {
             testSphere.SetActive(false);
+        }*/
+
+        if (VoxelPhysics.Instance.MoveBox(new Box(-1, 1) + transform.position, transform.forward, float.PositiveInfinity, -1, out VoxelRaycastHit hit)) {
+            testCube.SetActive(true);
+            testCube.transform.position = transform.position + hit.movement;
+        }
+        else {
+            testCube.SetActive(false);
         }
     }
 }

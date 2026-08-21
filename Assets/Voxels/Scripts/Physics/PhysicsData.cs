@@ -53,7 +53,7 @@ namespace Voxels.Physics {
         /// <returns>Index of the collider in the collider array</returns>
         private int AddMeshCollider(TransformedOctree octree, int layer) {
             int index = AddCollider(octree.bounds);
-            colliders[index] = new LinkedCollider(ColliderType.Mesh, meshColliders.Length, 1 << layer, colliders[index].next);
+            colliders[index] = new LinkedCollider(ColliderType.Mesh, meshColliders.Length, layer, colliders[index].next);
             meshColliders.Add(octree);
             return index;
         }
@@ -66,7 +66,7 @@ namespace Voxels.Physics {
         /// <returns>Index of the collider in the collider array</returns>
         private int AddBoxCollider(Box box, int layer) {
             int index = AddCollider(box);
-            colliders[index] = new LinkedCollider(ColliderType.Box, boxColliders.Length, 1 << layer, colliders[index].next);
+            colliders[index] = new LinkedCollider(ColliderType.Box, boxColliders.Length, layer, colliders[index].next);
             boxColliders.Add(box);
             return index;
         }
@@ -125,7 +125,7 @@ namespace Voxels.Physics {
         /// <returns>Index of the collider in the mesh collider array</returns>
         private int RemoveMeshCollider(int index, int swapIndex) {
             int meshIndex = colliders[index].index;
-            root = RemoveCollider(root, size, index, meshColliders[meshIndex].bounds);
+            root = RemoveCollider(root, size, index, meshColliders[meshIndex].bounds - offset);
             meshColliders.RemoveAtSwapBack(meshIndex);
             if (meshIndex < meshColliders.Length)
                 colliders[swapIndex] = new LinkedCollider(ColliderType.Mesh, meshIndex, colliders[swapIndex].layer, colliders[swapIndex].next);
@@ -140,7 +140,7 @@ namespace Voxels.Physics {
         /// <returns>Index of the collider in the box collider array</returns>
         private int RemoveBoxCollider(int index, int swapIndex) {
             int boxIndex = colliders[index].index;
-            root = RemoveCollider(root, size, index, boxColliders[boxIndex]);
+            root = RemoveCollider(root, size, index, boxColliders[boxIndex] - offset);
             boxColliders.RemoveAtSwapBack(boxIndex);
             if (boxIndex < boxColliders.Length)
                 colliders[swapIndex] = new LinkedCollider(ColliderType.Box, boxIndex, colliders[swapIndex].layer, colliders[swapIndex].next);
@@ -164,7 +164,6 @@ namespace Voxels.Physics {
                 else {
                     while (colliders[i].next != index) {
                         i = colliders[i].next;
-                        if (i == -1) throw new Exception(":((");
                     }
                     colliders[i] = new LinkedCollider(colliders[i].type, colliders[i].index, colliders[i].layer, colliders[index].next);
                 }
@@ -189,36 +188,20 @@ namespace Voxels.Physics {
         /// <param name="direction">Direction of the ray</param>
         /// <param name="distance">Maximum distance between the origin and the hit point</param>
         /// <param name="layerMask">Layers of colliders that are considered</param>
-        /// <param name="point">Hit point</param>
-        /// <param name="normal">Normal of the face that was hit</param>
-        /// <param name="type">Type of the collider that was hit</param>
-        /// <param name="index">Index of the collider that was hit</param>
+        /// <param name="hitInfo">Information about the hit point if the ray hit a collider</param>
         /// <returns>Whether the ray hit a collider</returns>
-        private bool Raycast(
-            float3 origin, float3 direction, float distance, int layerMask,
-            out float3 point, out float3 normal, out ColliderType type, out int index
-        ) {
+        private bool Raycast(float3 origin, float3 direction, float distance, int layerMask, out RaycastHit hitInfo) {
             if (math.any(origin < offset) || math.any(origin > offset + size))
                 throw new ArgumentOutOfRangeException($"Ray origin {origin} is out of range of physics octree");
-            bool hit = Raycast(root, offset + size / 2, size / 2, origin, direction, 1 / direction, ref distance, layerMask, out int hitAxis, out int hitIndex);
-            if (hit) {
-                point = origin + direction * distance;
-                normal = GetNormal(direction, hitAxis);
-                type = colliders[hitIndex].type;
-                index = colliders[hitIndex].index;
-            }
-            else {
-                point = 0;
-                normal = 0;
-                type = ColliderType.None;
-                index = -1;
-            }
+            bool hit = Raycast(root, offset, size, origin, direction, 1 / direction, layerMask, ref distance, out int axis, out int index);
+            hitInfo = GetInfo(hit, direction, distance, axis, index);
             return hit;
         }
 
         private bool Raycast(
-            int node, float3 center, float childSize,
-            float3 origin, float3 direction, float3 inverse, ref float distance, int layerMask, out int hitAxis, out int hitIndex
+            int node, float3 start, float size,
+            float3 origin, float3 direction, float3 inverse, int layerMask,
+            ref float distance, out int hitAxis, out int hitIndex
         ) {
             hitAxis = -1;
             hitIndex = -1;
@@ -230,7 +213,7 @@ namespace Voxels.Physics {
                 int axis = 0;
                 bool hit = colliders[i].type switch {
                     ColliderType.Mesh => meshColliders[colliders[i].index].Raycast(origin, direction, inverse, ref distance, out axis),
-                    ColliderType.Box => boxColliders[colliders[i].index].Raycast(origin, direction, inverse, ref distance, out axis),
+                    ColliderType.Box => boxColliders[colliders[i].index].Raycast(origin, inverse, ref distance, out axis),
                     _ => false
                 };
                 if (hit) {
@@ -239,23 +222,34 @@ namespace Voxels.Physics {
                 }
             }
 
+            // Find exit distance for this node
+            float3 exitPlanes = math.select(0, size, inverse > 0);
+            float3 exitDistances = (exitPlanes - origin) * inverse;
+            float minExitDistance = distance;
+            for (int i = 0; i < 3; i++) {
+                if (exitDistances[i] < minExitDistance) {
+                    minExitDistance = exitDistances[i];
+                }
+            }
+
             // Raycast in children traversed by the ray
-            float3 distances = (center - origin) * inverse;
-            distances = math.select(distances, float.PositiveInfinity, distances < 0);
+            float childSize = size / 2;
+            float3 center = start + childSize;
             bool3 side = origin > center;
+            float3 distances = (center - origin) * inverse;
+            distances = math.select(float.PositiveInfinity, distances, distances >= 0);
             float addedDistance = 0;
-            float3 childOrigin = origin;
             for (int i = 0; i < 4; i++) {
                 // Raycast in child
                 int childNode = octree[9 * node + 1 + math.bitmask(new bool4(side, false))];
-                float halfChildSize = childSize / 2;
-                float3 childCenter = math.select(center - halfChildSize, center + halfChildSize, side);
+                float3 childStart = math.select(start, start + childSize, side);
                 float childDistance = distance - addedDistance;
-                if (Raycast(childNode, childCenter, halfChildSize, childOrigin, direction, inverse, ref childDistance, layerMask, out int axis, out int index)) {
+                float3 childOrigin = origin + direction * addedDistance;
+                if (Raycast(childNode, childStart, childSize, childOrigin, direction, inverse, layerMask, ref childDistance, out int axis, out int index)) {
                     distance = childDistance + addedDistance;
                     hitAxis = axis;
                     hitIndex = index;
-                    break;
+                    return true;
                 }
 
                 // Find next child
@@ -267,10 +261,7 @@ namespace Voxels.Physics {
                         addedDistance = distances[j];
                     }
                 }
-                if (addedDistance > distance) break;
-                childOrigin = origin + direction * addedDistance;
-                childOrigin[axis] = center[axis];
-                if (!math.all(childOrigin >= center - childSize & childOrigin <= center + childSize)) break;
+                if (addedDistance > minExitDistance) break;
                 side[axis] = !side[axis];
                 distances[axis] = float.PositiveInfinity;
             }
@@ -278,10 +269,101 @@ namespace Voxels.Physics {
             return hitAxis != -1;
         }
 
-        private static float3 GetNormal(float3 direction, int axis) {
-            float3 normal = 0;
-            normal[axis] = -math.sign(direction[axis]);
-            return normal;
+
+        /// <summary>
+        /// Move query with a box shape
+        /// </summary>
+        /// <param name="origin">Start position of the box</param>
+        /// <param name="direction">Direction of the box</param>
+        /// <param name="distance">Maximum distance between the origin and the hit point</param>
+        /// <param name="layerMask">Layers of colliders that are considered</param>
+        /// <param name="hitInfo">Information about the hit point if the box hit a collider</param>
+        /// <returns>Whether the box hit a voxel</returns>
+        private bool MoveBox(Box origin, float3 direction, float distance, int layerMask, out RaycastHit hitInfo) {
+            if (math.any(origin.min < offset) || math.any(origin.max > offset + size))
+                throw new ArgumentOutOfRangeException($"Move origin {origin} is out of range of physics octree");
+            bool hit = MoveBox(root, offset, size, origin, direction, 1 / direction, layerMask, ref distance, out int axis, out int index);
+            hitInfo = GetInfo(hit, direction, distance, axis, index);
+            return hit;
+        }
+
+        private bool MoveBox(
+            int node, float3 start, float size,
+            Box origin, float3 direction, float3 inverse, int layerMask,
+            ref float distance, out int hitAxis, out int hitIndex
+        ) {
+            hitAxis = -1;
+            hitIndex = -1;
+            if (node == -1) return false;
+            
+            // Raycast in all colliders in this node
+            for (int i = octree[9 * node]; i != -1; i = colliders[i].next) {
+                if ((layerMask & 1 << colliders[i].layer) == 0) continue;
+                int axis = 0;
+                bool hit = colliders[i].type switch {
+                    ColliderType.Mesh => meshColliders[colliders[i].index].MoveBox(origin, direction, inverse, ref distance, out axis),
+                    ColliderType.Box => boxColliders[colliders[i].index].MoveBox(origin, inverse, ref distance, out axis),
+                    _ => false
+                };
+                if (hit) {
+                    hitAxis = axis;
+                    hitIndex = i;
+                }
+            }
+
+            // Pre-compute distances
+            float childSize = size / 2;
+            float3 center = start + childSize;
+            float3 minDistances1 = (start - origin.max) * inverse;
+            float3 maxDistances1 = (center - origin.min) * inverse;
+            float3 minDistances2 = (center - origin.max) * inverse;
+            float3 maxDistances2 = (start + size - origin.min) * inverse;
+            bool3 sign = inverse > 0;
+            float3 entryDistances1 = math.select(maxDistances1, minDistances1, sign);
+            float3 exitDistances1 = math.select(minDistances1, maxDistances1, sign);
+            float3 entryDistances2 = math.select(maxDistances2, minDistances2, sign);
+            float3 exitDistances2 = math.select(minDistances2, maxDistances2, sign);
+
+            // Move into children traversed by the movement
+            for (int x = 0; x <= 1; x++) {
+                for (int y = 0; y <= 1; y++) {
+                    for (int z = 0; z <= 1; z++) {
+                        bool3 side = new(x != 0, y != 0, z != 0);
+                        float3 entryDistances = math.select(entryDistances1, entryDistances2, side);
+                        float3 exitDistances = math.select(exitDistances1, exitDistances2, side);
+                        float maxEntryDistance = 0;
+                        float minExitDistance = distance;
+                        for (int i = 0; i < 3; i++) {
+                            if (entryDistances[i] > maxEntryDistance) {
+                                maxEntryDistance = entryDistances[i];
+                            }
+                            if (exitDistances[i] < minExitDistance) {
+                                minExitDistance = exitDistances[i];
+                            }
+                        }
+                        if (minExitDistance >= maxEntryDistance) { // Child is traversed by the movement
+                            int childNode = octree[9 * node + 1 + math.bitmask(new bool4(side, false))];
+                            float3 childStart = math.select(start, start + childSize, side);
+                            if (MoveBox(childNode, childStart, childSize, origin, direction, inverse, layerMask, ref distance, out int axis, out int index)) {
+                                hitAxis = axis;
+                                hitIndex = index;
+                            }
+                        }
+                    }
+                }
+            }
+
+            return hitAxis != -1;
+        }
+
+
+        private RaycastHit GetInfo(bool hit, float3 direction, float distance, int axis, int index) {
+            if (hit) {
+                float3 normal = 0;
+                normal[axis] = -math.sign(direction[axis]);
+                return new RaycastHit(direction * distance, normal, colliders[index].type, colliders[index].index);
+            }
+            else return new RaycastHit(0, 0, ColliderType.None, -1);
         }
         
         
@@ -302,10 +384,12 @@ namespace Voxels.Physics {
             => @this.RemoveBoxCollider(index, swapIndex);
 
         [BurstCompile]
-        public static bool Raycast(
-            ref PhysicsData @this, in float3 origin, in float3 direction, float maxDistance, int layerMask,
-            out float3 point, out float3 normal, out ColliderType type, out int index
-        ) => @this.Raycast(origin, direction, maxDistance, layerMask, out point, out normal, out type, out index);
+        public static bool Raycast(ref PhysicsData @this, in float3 origin, in float3 direction, float maxDistance, int layerMask, out RaycastHit hitInfo)
+            => @this.Raycast(origin, direction, maxDistance, layerMask, out hitInfo);
+
+        [BurstCompile]
+        public static bool MoveBox(ref PhysicsData @this, in Box origin, in float3 direction, float maxDistance, int layerMask, out RaycastHit hitInfo)
+            => @this.MoveBox(origin, direction, maxDistance, layerMask, out hitInfo);
 
 
         public readonly struct LinkedCollider {
@@ -319,6 +403,21 @@ namespace Voxels.Physics {
                 this.index = index;
                 this.layer = layer;
                 this.next = next;
+            }
+        }
+
+
+        public readonly struct RaycastHit {
+            public readonly float3 movement;
+            public readonly float3 normal;
+            public readonly ColliderType type;
+            public readonly int index;
+
+            public RaycastHit(float3 movement, float3 normal, ColliderType type, int index) {
+                this.movement = movement;
+                this.normal = normal;
+                this.type = type;
+                this.index = index;
             }
         }
     }
