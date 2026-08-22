@@ -20,12 +20,12 @@ public class PhysicsBenchmark : MonoBehaviour {
         InstantiatePrefabs();
         benchmark = new Benchmark();
         benchmark.Add(() => BenchmarkRaycast(), "Raycast", 5);
+        benchmark.Add(() => BenchmarkMoveBox(), "MoveBox", 5);
     }
 
     private void Update() {
         if (Input.GetKeyDown(KeyCode.B))
-            result.text = benchmark.Run() + "\n" + BenchmarkRaycast();
-        //    BenchmarkRaycast();
+            result.text = $"{benchmark.Run()}\n{BenchmarkRaycast()}\n{BenchmarkMoveBox()}";
     }
 
 
@@ -67,6 +67,37 @@ public class PhysicsBenchmark : MonoBehaviour {
             Vector3 direction = Random.onUnitSphere;
             float maxDistance = LogRange(1, maxPosition);
             bool hit = VoxelPhysics.Instance.Raycast(new Ray(origin, direction), maxDistance, -1, out VoxelRaycastHit info);
+            h = HashAdd(h, hit);
+            //s += $"{origin} {direction} {maxDistance} {hit}";
+            if (hit && info.movement != Vector3.zero) {
+                h = HashAdd(h, info.movement);
+                h = HashAdd(h, info.normal);
+                //s += $" {info.movement} {info.normal}";
+            }
+            //s += "\n";
+        }
+        //Debug.Log(s);
+        return h;
+    }
+
+    private int BenchmarkMoveBox() {
+        int h = 0;
+        Random.InitState(314);
+        //string s = "";
+        for (int i = 0; i < nRaycasts; i++) {
+            Vector3 origin = new(
+                Random.Range(0, maxPosition),
+                Random.Range(0, maxPosition),
+                Random.Range(0, maxPosition)
+            );
+            Vector3 size = new(
+                LogRange(1, maxPosition),
+                LogRange(1, maxPosition),
+                LogRange(1, maxPosition)
+            );
+            Vector3 direction = Random.onUnitSphere;
+            float maxDistance = LogRange(1, maxPosition);
+            bool hit = VoxelPhysics.Instance.MoveBox(new Box(origin, origin + size), direction, maxDistance, -1, out VoxelRaycastHit info);
             h = HashAdd(h, hit);
             //s += $"{origin} {direction} {maxDistance} {hit}";
             if (hit && info.movement != Vector3.zero) {
