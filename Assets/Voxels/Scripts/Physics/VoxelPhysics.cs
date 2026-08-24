@@ -47,15 +47,13 @@ namespace Voxels.Physics {
             for (int i = meshColliders.Count - 1; i >= 0; i--) {
                 VoxelMeshCollider collider = meshColliders[i];
                 if (collider.transform.localToWorldMatrix != collider.prevTransform || collider.gameObject.layer != data.colliders[collider.index].layer) {
-                    RemoveMeshCollider(collider);
-                    AddMeshCollider(collider);
+                    ReinsertMeshCollider(collider);
                 }
             }
             for (int i = boxColliders.Count - 1; i >= 0; i--) {
                 VoxelBoxCollider collider = boxColliders[i];
-                if (collider.transform.position != collider.prevTransform || collider.gameObject.layer != data.colliders[collider.index].layer) {
-                    RemoveBoxCollider(collider);
-                    AddBoxCollider(collider);
+                if (collider.transform.localToWorldMatrix != collider.prevTransform || collider.gameObject.layer != data.colliders[collider.index].layer) {
+                    ReinsertBoxCollider(collider);
                 }
             }
         }
@@ -102,7 +100,7 @@ namespace Voxels.Physics {
         internal void AddBoxCollider(VoxelBoxCollider collider) {
             boxColliders.Add(collider);
             collider.index = PhysicsData.AddBoxCollider(ref data, collider.Box, collider.gameObject.layer);
-            collider.prevTransform = collider.transform.position;
+            collider.prevTransform = collider.transform.localToWorldMatrix;
         }
 
         /// <summary>
@@ -129,17 +127,38 @@ namespace Voxels.Physics {
             collider.index = -1;
         }
 
+        /// <summary>
+        /// Reinsert a mesh collider
+        /// </summary>
+        /// <param name="collider">The collider</param>
+        internal void ReinsertMeshCollider(VoxelMeshCollider collider) {
+            TransformedOctree octree = new(octrees[collider.voxels], collider.voxels, collider.transform);
+            PhysicsData.ReinsertMeshCollider(ref data, collider.index, octree, collider.gameObject.layer);
+            collider.prevTransform = collider.transform.localToWorldMatrix;
+        }
+
+        /// <summary>
+        /// Reinsert a box collider
+        /// </summary>
+        /// <param name="collider">The collider</param>
+        internal void ReinsertBoxCollider(VoxelBoxCollider collider) {
+            PhysicsData.ReinsertBoxCollider(ref data, collider.index, collider.Box, collider.gameObject.layer);
+            collider.prevTransform = collider.transform.localToWorldMatrix;
+        }
+
 
         /// <summary>
         /// Raycast query
         /// </summary>
-        /// <param name="ray">The ray</param>
+        /// <param name="origin">Origin of the ray</param>
+        /// <param name="direction">Direction of the ray</param>
         /// <param name="maxDistance">Maximum distance between the origin and the hit point</param>
         /// <param name="layerMask">Layers of colliders that are considered</param>
+        /// <param name="ignoredCollider">Collider to ignore</param>
         /// <param name="hitInfo">Information about the hit point if the ray hit a collider</param>
         /// <returns>Whether the ray hit a collider</returns>
-        public bool Raycast(Ray ray, float maxDistance, int layerMask, out VoxelRaycastHit hitInfo) {
-            bool hit = PhysicsData.Raycast(ref data, ray.origin, ray.direction, maxDistance, layerMask, out PhysicsData.RaycastHit info);
+        public bool Raycast(Vector3 origin, Vector3 direction, float maxDistance, int layerMask, VoxelCollider ignoredCollider, out VoxelRaycastHit hitInfo) {
+            bool hit = PhysicsData.Raycast(ref data, origin, direction, maxDistance, layerMask, ignoredCollider ? ignoredCollider.index : -1, out PhysicsData.RaycastHit info);
             hitInfo = GetInfo(info);
             return hit;
         }
@@ -151,18 +170,19 @@ namespace Voxels.Physics {
         /// <param name="direction">Direction of the box</param>
         /// <param name="maxDistance">Maximum distance between the origin and the hit point</param>
         /// <param name="layerMask">Layers of colliders that are considered</param>
+        /// <param name="ignoredCollider">Collider to ignore</param>
         /// <param name="hitInfo">Information about the hit point if the box hit a collider</param>
         /// <returns>Whether the box hit a voxel</returns>
-        public bool MoveBox(Box origin, float3 direction, float maxDistance, int layerMask, out VoxelRaycastHit hitInfo) {
-            bool hit = PhysicsData.MoveBox(ref data, origin, direction, maxDistance, layerMask, out PhysicsData.RaycastHit info);
+        public bool MoveBox(Box origin, float3 direction, float maxDistance, int layerMask, VoxelCollider ignoredCollider, out VoxelRaycastHit hitInfo) {
+            bool hit = PhysicsData.MoveBox(ref data, origin, direction, maxDistance, layerMask, ignoredCollider ? ignoredCollider.index : -1, out PhysicsData.RaycastHit info);
             hitInfo = GetInfo(info);
             return hit;
         }
 
         private VoxelRaycastHit GetInfo(PhysicsData.RaycastHit info)
-            => new(info.movement, info.normal, info.type switch {
-                ColliderType.Mesh => meshColliders[info.index].gameObject,
-                ColliderType.Box => boxColliders[info.index].gameObject,
+            => new(info.distance, info.normal, info.type switch {
+                ColliderType.Mesh => meshColliders[info.index],
+                ColliderType.Box => boxColliders[info.index],
                 _ => null
             });
     }

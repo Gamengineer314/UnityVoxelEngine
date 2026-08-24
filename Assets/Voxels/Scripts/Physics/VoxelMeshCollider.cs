@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 using Voxels.Collections;
 using Voxels.Rendering;
@@ -5,12 +6,10 @@ using Voxels.Rendering;
 namespace Voxels.Physics {
     
     [RequireComponent(typeof(VoxelMesh))]
-    public class VoxelMeshCollider : MonoBehaviour {
+    public class VoxelMeshCollider : VoxelCollider {
         [SerializeField] private VoxelColumnsAsset voxelsAsset;
         public GenerationParameters parameters;
         internal VoxelColumns voxels;
-        internal int index = -1; // Index of the collider in physics data
-        internal Matrix4x4 prevTransform;
         public bool generated { get; private set; }
 
 
@@ -86,6 +85,16 @@ namespace Voxels.Physics {
         /// Complete the generation of this object's octree
         /// </summary>
         public void CompleteGeneration() => VoxelPhysics.Instance.generator.Complete(voxels);
+
+        /// <summary>
+        /// Reinsert the collider in the physics octree after updating its transform.
+        /// Subsequent physics queries will reflect the new transform.
+        /// </summary>
+        /// <remarks>This is done automatically each frame in the LateUpdate</remarks>
+        public void Reinsert() {
+            if (!isActiveAndEnabled) throw new InvalidOperationException("The collider isn't active");
+            VoxelPhysics.Instance.ReinsertMeshCollider(this);
+        }
     }
 
 }

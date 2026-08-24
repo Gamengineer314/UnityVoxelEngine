@@ -66,11 +66,11 @@ public class PhysicsBenchmark : MonoBehaviour {
             );
             Vector3 direction = Random.onUnitSphere;
             float maxDistance = LogRange(1, maxPosition);
-            bool hit = VoxelPhysics.Instance.Raycast(new Ray(origin, direction), maxDistance, -1, out VoxelRaycastHit info);
+            bool hit = VoxelPhysics.Instance.Raycast(origin, direction, maxDistance, -1, null, out VoxelRaycastHit info);
             h = HashAdd(h, hit);
             //s += $"{origin} {direction} {maxDistance} {hit}";
-            if (hit && info.movement != Vector3.zero) {
-                h = HashAdd(h, info.movement);
+            if (hit && info.distance != 0) {
+                h = HashAdd(h, info.distance);
                 h = HashAdd(h, info.normal);
                 //s += $" {info.movement} {info.normal}";
             }
@@ -97,11 +97,11 @@ public class PhysicsBenchmark : MonoBehaviour {
             );
             Vector3 direction = Random.onUnitSphere;
             float maxDistance = LogRange(1, maxPosition);
-            bool hit = VoxelPhysics.Instance.MoveBox(new Box(origin, origin + size), direction, maxDistance, -1, out VoxelRaycastHit info);
+            bool hit = VoxelPhysics.Instance.MoveBox(new Box(origin, origin + size), direction, maxDistance, -1, null, out VoxelRaycastHit info);
             h = HashAdd(h, hit);
             //s += $"{origin} {direction} {maxDistance} {hit}";
-            if (hit && info.movement != Vector3.zero) {
-                h = HashAdd(h, info.movement);
+            if (hit && info.distance != 0) {
+                h = HashAdd(h, info.distance);
                 h = HashAdd(h, info.normal);
                 //s += $" {info.movement} {info.normal}";
             }

@@ -208,11 +208,10 @@ namespace Voxels.Physics {
             float3 maxDistances1 = (childSize - origin.min) * inverse;
             float3 minDistances2 = (childSize - origin.max) * inverse;
             float3 maxDistances2 = (size - origin.min) * inverse;
-            bool3 sign = inverse > 0;
-            float3 entryDistances1 = math.select(maxDistances1, minDistances1, sign);
-            float3 exitDistances1 = math.select(minDistances1, maxDistances1, sign);
-            float3 entryDistances2 = math.select(maxDistances2, minDistances2, sign);
-            float3 exitDistances2 = math.select(minDistances2, maxDistances2, sign);
+            float3 entryDistances1 = math.select(minDistances1, maxDistances1, maxDistances1 < minDistances1);
+            float3 exitDistances1 = math.select(minDistances1, maxDistances1, maxDistances1 > minDistances1);
+            float3 entryDistances2 = math.select(minDistances2, maxDistances2, maxDistances2 < minDistances2);
+            float3 exitDistances2 = math.select(minDistances2, maxDistances2, maxDistances2 > minDistances2);
 
             // Move into children traversed by the movement
             bool hit = false;
@@ -224,7 +223,7 @@ namespace Voxels.Physics {
                         float3 exitDistances = math.select(exitDistances1, exitDistances2, side);
                         float maxEntryDistance = 0;
                         float minExitDistance = distance;
-                        int entryAxis = 0;
+                        int entryAxis = axis;
                         for (int i = 0; i < 3; i++) {
                             if (entryDistances[i] > maxEntryDistance) {
                                 maxEntryDistance = entryDistances[i];
