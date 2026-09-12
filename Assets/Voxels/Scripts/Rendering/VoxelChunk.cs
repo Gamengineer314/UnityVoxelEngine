@@ -3,34 +3,6 @@ using Unity.Mathematics;
 namespace Voxels.Rendering {
 
     /// <summary>
-    /// Face of a voxel
-    /// </summary>
-    internal readonly struct VoxelFace {
-        public const int maxSize = 1024;
-        public const int maxColor = 65535;
-
-        public readonly uint data1; // x (10b), y (10b), z (10b)
-        public readonly uint data2; // width (6b), height (6b), normal (3b), color (16b)
-
-        public VoxelFace(int3 position, int width, int height, VoxelNormal normal, int color) {
-            data1 = (uint)position.x | (uint)position.y << 10 | (uint)position.z << 20;
-            data2 = (uint)width - 1 | (uint)height - 1 << 6 | (uint)normal << 12 | (uint)color << 16;
-        }
-
-        public int X => (int)(data1 & 0x3FF);
-        public int Y => (int)(data1 >> 10 & 0x3FF);
-        public int Z => (int)(data1 >> 20);
-        public int3 Position => new(X, Y, Z);
-        public int Width => (int)((data2 & 0x3F) + 1);
-        public int Height => (int)((data2 >> 6 & 0x3F) + 1);
-        public VoxelNormal Normal => (VoxelNormal)(data2 >> 12 & 7);
-        public int Color => (int)(data2 >> 16);
-
-        public override string ToString() => $"[({X} {Y} {Z}) ({Width} {Height}) {Normal} {Color}]";
-    }
-
-
-    /// <summary>
     /// Per-chunk data
     /// </summary>
     internal readonly struct VoxelChunk {
@@ -80,45 +52,6 @@ namespace Voxels.Rendering {
         }
 
         public int Color => (int)color;
-    }
-
-
-    /// <summary>
-    /// Normals for a cube
-    /// </summary>
-    public enum VoxelNormal {
-        XNegative = 0,
-        XPositive = 1,
-        YNegative = 2,
-        YPositive = 3,
-        ZNegative = 4,
-        ZPositive = 5,
-        Any = 6,
-        None = 7
-    }
-
-
-    /// <summary>
-    /// Normals helper functions
-    /// </summary>
-    public static class VoxelNormals {
-        /// <summary>
-        /// Axis of a normal
-        /// </summary>
-        public static int Axis(VoxelNormal normal) => (int)((uint)normal >> 1);
-
-        /// <summary>
-        /// Whether a normal is positive or negative
-        /// </summary>
-        public static bool Positive(VoxelNormal normal) => ((int)normal & 1) == 1;
-
-        // x: 1, y: 0, z: 1
-        internal static int WidthAxis(VoxelNormal normal) => WidthAxis(Axis(normal));
-        internal static int WidthAxis(int axis) => 1 & ~axis;
-
-        // x: 2, y: 2, z: 0
-        internal static int HeightAxis(VoxelNormal normal) => HeightAxis(Axis(normal));
-        internal static int HeightAxis(int axis) => 2 & ~axis;
     }
     
 }
