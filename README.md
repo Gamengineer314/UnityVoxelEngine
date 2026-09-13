@@ -24,7 +24,7 @@ The default voxel shader renders the models without modification or effect. It u
 
 Custom voxel shaders can be written using the functions defined in `VoxelShader.cginc`. Here is a template shader :
 ```c
-Shader "Voxels/Terrain" {
+Shader "Voxels/Template" {
     Properties {
 
     }
@@ -71,7 +71,7 @@ Shader "Voxels/Terrain" {
 - Back-face culling : since voxel faces can only have 6 different orientations, chunks can be further split into one for each orientation. This allows the culling shader to discard entire chunks that face away from the camera, significantly reducing the number of rendered triangles. It also increases the number of chunks, but this isn't a problem since per-chunk overhead is low.
 - Greedy meshing : when generating a voxel mesh, adjacent faces can be merged to reduce the number of triangles in the mesh. Face merging is done with a greedy algorithm that is heavily optimized using bitwise operations. A great explanation of the algorithm can be found in [this video](https://youtu.be/qnGoGq7DWMc).
 - Quads interleaving : a disadvantage of greedy meshing is that we lose the property that adjacent triangles always share two vertices. This means that the rasterizer can't guarantee that each pixel on the line separating the two triangles will belong to either the first or the second triangle. This can result in 1-pixel gaps or overlaps between faces. Overlaps are almost invisible, but gaps are very noticeable if the background color is very different from the color of the faces. To fix this, the vertex shader slightly increases the size of each triangle in screen space, to interleave the faces by a fixed pixel amount. This amount can be set in the `VoxelRenderer` component. Basically, it should be set to the smallest value that eliminates all gaps. This may depend on the hardware and/or graphics API used.
-- Data packing : memory consumption is reduced in two ways. Firstly, mesh data is stored per face rather than per vertex. The vertex shader receives the vertex index, divides it by 4, and reads the corresponding face data from a buffer. It then computes the vertex position based on the face data and the vertex index modulo 4. This only requires a few basic instructions. Secondly, instead of using floating-point numbers, the data fields are stored as very small integers and packed together into two 32-bit integers per face, with per-chunk offsets when necessary. The position uses 3 x 10 bits with an offset, the size uses 2 x 6 bits, the normal uses 3 bits, and the color index uses 16 bits with an offset.
+- Data packing : memory consumption is reduced in two ways. Firstly, mesh data is stored per face rather than per vertex. The vertex shader receives the vertex index, divides it by 4, and reads the corresponding face data from a buffer. It then computes the vertex position based on the face data and the vertex index modulo 4, which only requires a few basic instructions. Secondly, instead of using floating-point numbers, the data fields are stored as very small integers and packed together into two 32-bit integers per face, with per-chunk offsets when necessary. The position uses 3 x 10 bits with an offset, the size uses 2 x 6 bits, the normal uses 3 bits, and the color index uses 16 bits with an offset.
 
 
 ## Physics components
