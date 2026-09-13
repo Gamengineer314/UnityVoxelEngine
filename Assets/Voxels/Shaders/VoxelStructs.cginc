@@ -3,7 +3,7 @@
 
 #include "UnityCG.cginc"
 
-// C equivalent of VoxelStructs.cs
+// C equivalent of C# structs passed to the GPU
 
 struct CommandOffset {
     float3 position;

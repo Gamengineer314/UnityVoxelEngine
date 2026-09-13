@@ -5,7 +5,7 @@ using Unity.Mathematics;
 namespace Voxels.Physics {
     
     /// <summary>
-    /// Kinematic character controller that checks collisions between voxel colliders
+    /// Kinematic character controller that checks collisions between the VoxelBoxCollider attached to the same GameObject and other voxel colliders
     /// </summary>
     [RequireComponent(typeof(VoxelBoxCollider))]
     public class VoxelCharacterController : MonoBehaviour {

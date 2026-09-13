@@ -1,7 +1,5 @@
 #if UNITY_EDITOR
-using System.Collections.Generic;
 using System.IO;
-using System.Globalization;
 using System.Text;
 using UnityEngine;
 using UnityEditor.AssetImporters;
